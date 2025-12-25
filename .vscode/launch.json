@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "neurix",
+            "request": "launch",
+            "type": "dart",
+            "args": [
+                "--enable-software-rendering",
+                "--skia-deterministic-rendering"
+            ]
+        },
+        {
+            "name": "neurix (profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "neurix (release mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        }
+    ]
+} 
