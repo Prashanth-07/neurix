@@ -377,27 +377,26 @@ Return ONLY the keyword or "all", nothing else.''';
         await initialize();
       }
 
-      final now = DateTime.now();
-      final currentTimeStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}T${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00';
-
       String systemPrompt = '''Parse reminder and return JSON only.
 
-Current datetime: $currentTimeStr
-
 JSON format:
-{"type":"oneTime|recurring","message":"Task","intervalMinutes":number|null,"scheduledTime":"ISO8601"|null}
+{"type":"oneTime|recurring","message":"Task","timeType":"duration|static|null","timeValue":"string|null","intervalMinutes":number|null}
 
 Rules:
-- "every X min/hour" → recurring, intervalMinutes = X (in minutes)
-- "in/after X min/hour" → oneTime, scheduledTime = now + X
-- "at X PM/AM" → oneTime, scheduledTime = that time today/tomorrow
+- "every X min/hour" → type=recurring, intervalMinutes=X (convert hours to minutes)
+- "in/after X min/hour" → type=oneTime, timeType=duration, timeValue="X minutes" or "X hours"
+- "at X PM/AM" or "at X o'clock" → type=oneTime, timeType=static, timeValue="X PM" or "X AM"
 - message = just the task (capitalized), no time words
 
 Examples:
-"remind me to drink water every 30 minutes" → {"type":"recurring","message":"Drink water","intervalMinutes":30,"scheduledTime":null}
-"remind me to call mom after 5 minutes" → {"type":"oneTime","message":"Call mom","intervalMinutes":null,"scheduledTime":"$currentTimeStr + 5 min"}
+"remind me to drink water every 30 minutes" → {"type":"recurring","message":"Drink water","timeType":null,"timeValue":null,"intervalMinutes":30}
+"remind me to drink water every 2 hours" → {"type":"recurring","message":"Drink water","timeType":null,"timeValue":null,"intervalMinutes":120}
+"remind me to call mom in 5 minutes" → {"type":"oneTime","message":"Call mom","timeType":"duration","timeValue":"5 minutes","intervalMinutes":null}
+"remind me to call mom after 2 hours" → {"type":"oneTime","message":"Call mom","timeType":"duration","timeValue":"2 hours","intervalMinutes":null}
+"remind me to take medicine at 4pm" → {"type":"oneTime","message":"Take medicine","timeType":"static","timeValue":"4 PM","intervalMinutes":null}
+"remind me to wake up at 7 in the morning" → {"type":"oneTime","message":"Wake up","timeType":"static","timeValue":"7 AM","intervalMinutes":null}
 
-Return ONLY JSON.''';
+Return ONLY JSON, no extra text.''';
 
       String userMessage = userInput;
 
@@ -415,17 +414,7 @@ Return ONLY JSON.''';
       }
 
       Map<String, dynamic> parsed = jsonDecode(jsonStr);
-      print('[LLM-3] Parsed: $parsed');
-
-      // Convert scheduledTime string to DateTime if present
-      if (parsed['scheduledTime'] != null && parsed['scheduledTime'] is String) {
-        try {
-          parsed['scheduledTime'] = DateTime.parse(parsed['scheduledTime']);
-        } catch (e) {
-          print('[LLM-3] Failed to parse scheduledTime, will use default');
-          parsed['scheduledTime'] = null;
-        }
-      }
+      print('[LLM-3] Parsed JSON: $parsed');
 
       // Validate required fields
       if (parsed['message'] == null || parsed['type'] == null) {
@@ -433,12 +422,24 @@ Return ONLY JSON.''';
         return null;
       }
 
+      // Calculate scheduledTime based on timeType and timeValue
+      if (parsed['type'] == 'oneTime') {
+        DateTime? scheduledTime = _calculateScheduledTime(
+          parsed['timeType'] as String?,
+          parsed['timeValue'] as String?,
+        );
+        parsed['scheduledTime'] = scheduledTime;
+        print('[LLM-3] Calculated scheduledTime: $scheduledTime');
+      }
+
       // Ensure proper defaults
       if (parsed['type'] == 'oneTime' && parsed['scheduledTime'] == null) {
         parsed['scheduledTime'] = DateTime.now().add(const Duration(minutes: 5));
+        print('[LLM-3] Using default 5 minutes from now');
       } else if (parsed['type'] == 'recurring') {
         if (parsed['intervalMinutes'] == null || parsed['intervalMinutes'] == 0) {
           parsed['intervalMinutes'] = 30;
+          print('[LLM-3] Using default interval of 30 minutes');
         }
       }
 
@@ -448,6 +449,112 @@ Return ONLY JSON.''';
       print('[LLM-3] Error: $e');
       return null;
     }
+  }
+
+  /// Calculate the actual scheduled DateTime from timeType and timeValue
+  DateTime? _calculateScheduledTime(String? timeType, String? timeValue) {
+    if (timeType == null || timeValue == null) {
+      print('[LLM-3] timeType or timeValue is null');
+      return null;
+    }
+
+    final now = DateTime.now();
+    print('[LLM-3] Calculating time - type: $timeType, value: $timeValue, now: $now');
+
+    if (timeType == 'duration') {
+      // Parse duration like "5 minutes", "2 hours", "30 min"
+      return _parseDuration(timeValue, now);
+    } else if (timeType == 'static') {
+      // Parse static time like "4 PM", "7 AM", "4:30 PM"
+      return _parseStaticTime(timeValue, now);
+    }
+
+    return null;
+  }
+
+  /// Parse duration string and add to current time
+  /// Handles: "5 minutes", "2 hours", "30 min", "1 hour"
+  DateTime? _parseDuration(String timeValue, DateTime now) {
+    final lowerValue = timeValue.toLowerCase().trim();
+    print('[LLM-3] Parsing duration: "$lowerValue"');
+
+    // Extract number from string
+    final numberMatch = RegExp(r'(\d+)').firstMatch(lowerValue);
+    if (numberMatch == null) {
+      print('[LLM-3] No number found in duration');
+      return null;
+    }
+    final number = int.parse(numberMatch.group(1)!);
+
+    // Determine unit (minutes or hours)
+    if (lowerValue.contains('hour')) {
+      print('[LLM-3] Duration: $number hours');
+      return now.add(Duration(hours: number));
+    } else if (lowerValue.contains('min')) {
+      print('[LLM-3] Duration: $number minutes');
+      return now.add(Duration(minutes: number));
+    } else if (lowerValue.contains('second')) {
+      print('[LLM-3] Duration: $number seconds');
+      return now.add(Duration(seconds: number));
+    }
+
+    // Default to minutes if no unit specified
+    print('[LLM-3] Duration: $number minutes (default)');
+    return now.add(Duration(minutes: number));
+  }
+
+  /// Parse static time string and return DateTime for today or tomorrow
+  /// Handles: "4 PM", "7 AM", "4:30 PM", "16:00"
+  DateTime? _parseStaticTime(String timeValue, DateTime now) {
+    final lowerValue = timeValue.toLowerCase().trim();
+    print('[LLM-3] Parsing static time: "$lowerValue"');
+
+    int hour = 0;
+    int minute = 0;
+    bool isPM = lowerValue.contains('pm') || lowerValue.contains('p.m');
+    bool isAM = lowerValue.contains('am') || lowerValue.contains('a.m');
+
+    // Remove AM/PM markers for parsing
+    String cleanTime = lowerValue
+        .replaceAll('pm', '')
+        .replaceAll('am', '')
+        .replaceAll('p.m.', '')
+        .replaceAll('a.m.', '')
+        .replaceAll('p.m', '')
+        .replaceAll('a.m', '')
+        .trim();
+
+    // Try to parse time formats
+    if (cleanTime.contains(':')) {
+      // Format: "4:30" or "16:00"
+      final parts = cleanTime.split(':');
+      hour = int.tryParse(parts[0].trim()) ?? 0;
+      minute = int.tryParse(parts[1].trim()) ?? 0;
+    } else {
+      // Format: "4" or "16"
+      hour = int.tryParse(cleanTime) ?? 0;
+    }
+
+    // Convert to 24-hour format
+    if (isPM && hour < 12) {
+      hour += 12;
+    } else if (isAM && hour == 12) {
+      hour = 0;
+    }
+
+    print('[LLM-3] Parsed hour: $hour, minute: $minute');
+
+    // Create DateTime for today at the specified time
+    DateTime scheduled = DateTime(now.year, now.month, now.day, hour, minute);
+
+    // If the time has already passed today, schedule for tomorrow
+    if (scheduled.isBefore(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+      print('[LLM-3] Time already passed, scheduling for tomorrow');
+    }
+
+    print('[LLM-3] Scheduled time: $scheduled');
+    return scheduled;
   }
 
 

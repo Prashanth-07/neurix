@@ -34,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _transcribedText = '';
   String _statusText = 'Tap to speak';
   bool _isProcessing = false;
+  bool _hasProcessedCurrentInput = false; // Prevents duplicate processing
 
   @override
   void initState() {
@@ -103,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _isListening = true;
       _transcribedText = '';
       _statusText = 'Listening...';
+      _hasProcessedCurrentInput = false; // Reset for new input
     });
 
     await _speech.listen(
@@ -147,6 +149,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// 3. Speak response and reset UI
   Future<void> _processVoiceInput() async {
     if (_transcribedText.isEmpty) return;
+
+    // Prevent duplicate processing - both onStatus and onResult can trigger this
+    if (_hasProcessedCurrentInput) {
+      print('[FLOW] Already processed this input, skipping duplicate call');
+      return;
+    }
+    _hasProcessedCurrentInput = true;
 
     print('[FLOW] ========================================');
     print('[FLOW] User said: "$_transcribedText"');

@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import '../models/reminder_model.dart';
@@ -31,8 +33,25 @@ class ReminderService {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    // Initialize timezone data
+    // Initialize timezone data and set local timezone
     tz_data.initializeTimeZones();
+
+    // Set the local timezone based on device's timezone offset
+    // This is critical for scheduled notifications to work correctly
+    final now = DateTime.now();
+    final offsetHours = now.timeZoneOffset.inHours;
+    final offsetMinutes = now.timeZoneOffset.inMinutes % 60;
+
+    // Find a matching timezone or use a generic one
+    String timezoneName = _getTimezoneNameFromOffset(now.timeZoneOffset);
+    try {
+      tz.setLocalLocation(tz.getLocation(timezoneName));
+      print('[ReminderService] Timezone set to: $timezoneName (UTC${offsetHours >= 0 ? '+' : ''}$offsetHours:${offsetMinutes.toString().padLeft(2, '0')})');
+    } catch (e) {
+      // Fallback: use UTC and adjust manually
+      print('[ReminderService] Could not set timezone $timezoneName, using UTC with offset');
+      tz.setLocalLocation(tz.UTC);
+    }
 
     // Initialize TTS
     await _tts.setLanguage('en-US');
@@ -61,16 +80,46 @@ class ReminderService {
       enableVibration: true,
     );
 
-    await _notifications
+    final androidPlugin = _notifications
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(androidChannel);
+            AndroidFlutterLocalNotificationsPlugin>();
+
+    await androidPlugin?.createNotificationChannel(androidChannel);
+
+    // Request exact alarm permission (required for Android 12+)
+    await _requestExactAlarmPermission(androidPlugin);
 
     // Reschedule any active reminders on app start
     await _rescheduleAllActiveReminders();
 
     _isInitialized = true;
     print('[ReminderService] Initialized with AlarmManager');
+  }
+
+  /// Request exact alarm permission for Android 12+ (API 31+)
+  Future<void> _requestExactAlarmPermission(AndroidFlutterLocalNotificationsPlugin? androidPlugin) async {
+    if (androidPlugin == null) return;
+
+    // Check if exact alarms are permitted
+    final exactAlarmPermissionStatus = await androidPlugin.canScheduleExactNotifications();
+    print('[ReminderService] Exact alarm permission status: $exactAlarmPermissionStatus');
+
+    if (exactAlarmPermissionStatus != true) {
+      print('[ReminderService] Requesting exact alarm permission...');
+      // Request the permission - this opens system settings on Android 12+
+      final granted = await androidPlugin.requestExactAlarmsPermission();
+      print('[ReminderService] Exact alarm permission granted: $granted');
+    }
+
+    // Also request notification permission for Android 13+
+    final notificationStatus = await Permission.notification.status;
+    print('[ReminderService] Notification permission status: $notificationStatus');
+
+    if (!notificationStatus.isGranted) {
+      print('[ReminderService] Requesting notification permission...');
+      final result = await Permission.notification.request();
+      print('[ReminderService] Notification permission result: $result');
+    }
   }
 
   /// Handle notification response
@@ -133,7 +182,20 @@ class ReminderService {
     // Convert to TZDateTime for scheduling
     final scheduledDate = tz.TZDateTime.from(reminder.nextTrigger!, tz.local);
 
-    print('[ReminderService] Scheduling "${reminder.message}" for $scheduledDate');
+    // Check permission status before scheduling
+    final androidPlugin = _notifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final canScheduleExact = await androidPlugin?.canScheduleExactNotifications();
+
+    print('[ReminderService] ===== SCHEDULING NOTIFICATION =====');
+    print('[ReminderService] Message: "${reminder.message}"');
+    print('[ReminderService] Now (local): ${DateTime.now()}');
+    print('[ReminderService] Target (DateTime): ${reminder.nextTrigger}');
+    print('[ReminderService] Target (TZDateTime): $scheduledDate');
+    print('[ReminderService] Time until trigger: ${reminder.nextTrigger!.difference(DateTime.now()).inSeconds} seconds');
+    print('[ReminderService] Notification ID: $notificationId');
+    print('[ReminderService] Can schedule exact alarms: $canScheduleExact');
+    print('[ReminderService] ================================');
 
     await _notifications.zonedSchedule(
       notificationId,
@@ -142,6 +204,8 @@ class ReminderService {
       scheduledDate,
       notificationDetails,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       payload: reminder.id,
     );
   }
@@ -494,6 +558,42 @@ class ReminderService {
   static String _capitalizeFirst(String text) {
     if (text.isEmpty) return text;
     return text[0].toUpperCase() + text.substring(1);
+  }
+
+  /// Get timezone name from offset (common timezones)
+  String _getTimezoneNameFromOffset(Duration offset) {
+    final hours = offset.inHours;
+    final minutes = offset.inMinutes % 60;
+
+    // Map common timezone offsets to IANA timezone names
+    // This covers major timezones - India is UTC+5:30
+    final Map<String, String> offsetToTimezone = {
+      '5:30': 'Asia/Kolkata',      // India
+      '5:45': 'Asia/Kathmandu',    // Nepal
+      '0:0': 'UTC',                // UTC
+      '1:0': 'Europe/Paris',       // CET
+      '2:0': 'Europe/Athens',      // EET
+      '3:0': 'Europe/Moscow',      // MSK
+      '4:0': 'Asia/Dubai',         // GST
+      '5:0': 'Asia/Karachi',       // PKT
+      '6:0': 'Asia/Dhaka',         // BST
+      '7:0': 'Asia/Bangkok',       // ICT
+      '8:0': 'Asia/Singapore',     // SGT
+      '9:0': 'Asia/Tokyo',         // JST
+      '9:30': 'Australia/Darwin',  // ACST
+      '10:0': 'Australia/Sydney',  // AEST
+      '11:0': 'Pacific/Noumea',    // NCT
+      '12:0': 'Pacific/Auckland',  // NZST
+      '-5:0': 'America/New_York',  // EST
+      '-6:0': 'America/Chicago',   // CST
+      '-7:0': 'America/Denver',    // MST
+      '-8:0': 'America/Los_Angeles', // PST
+      '-3:0': 'America/Sao_Paulo', // BRT
+      '-4:0': 'America/Halifax',   // AST
+    };
+
+    final key = '$hours:${minutes.abs()}';
+    return offsetToTimezone[key] ?? 'Asia/Kolkata'; // Default to India if not found
   }
 
   /// Stop the reminder check timer
