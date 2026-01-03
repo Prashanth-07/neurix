@@ -5,16 +5,18 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../models/user_model.dart';
 import '../models/memory_model.dart';
+import '../models/reminder_model.dart';
 import 'embedding_service.dart';
 
 class LocalDbService {
   static Database? _database;
   static const String _databaseName = 'neurix.db';
-  static const int _databaseVersion = 2; // Bumped version to add memories table
-  
+  static const int _databaseVersion = 3; // Bumped version to add reminders table
+
   // Table names
   static const String _usersTable = 'users';
-  static const String _memoriesTable = 'memories'; // For future use
+  static const String _memoriesTable = 'memories';
+  static const String _remindersTable = 'reminders';
   
   // Get database instance
   Future<Database> get database async {
@@ -76,6 +78,29 @@ class LocalDbService {
         CREATE INDEX idx_memories_user_id ON $_memoriesTable(user_id)
       ''');
 
+      await db.execute('''
+        CREATE TABLE $_remindersTable (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          message TEXT NOT NULL,
+          type TEXT NOT NULL,
+          interval_minutes INTEGER,
+          scheduled_time TEXT,
+          next_trigger TEXT NOT NULL,
+          is_active INTEGER DEFAULT 1,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      // Create index for faster reminder queries
+      await db.execute('''
+        CREATE INDEX idx_reminders_user_id ON $_remindersTable(user_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX idx_reminders_next_trigger ON $_remindersTable(next_trigger)
+      ''');
+
       print('Database tables created successfully');
     } catch (e) {
       print('Error creating tables: $e');
@@ -102,7 +127,34 @@ class LocalDbService {
         CREATE INDEX IF NOT EXISTS idx_memories_user_id ON $_memoriesTable(user_id)
       ''');
 
-      print('Database upgraded to version $newVersion');
+      print('Database upgraded to version 2');
+    }
+
+    if (oldVersion < 3) {
+      // Add reminders table for version 3
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $_remindersTable (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          message TEXT NOT NULL,
+          type TEXT NOT NULL,
+          interval_minutes INTEGER,
+          scheduled_time TEXT,
+          next_trigger TEXT NOT NULL,
+          is_active INTEGER DEFAULT 1,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON $_remindersTable(user_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_reminders_next_trigger ON $_remindersTable(next_trigger)
+      ''');
+
+      print('Database upgraded to version 3');
     }
   }
 
@@ -571,6 +623,274 @@ class LocalDbService {
 
   // ==================== END MEMORY OPERATIONS ====================
 
+  // ==================== REMINDER OPERATIONS ====================
+
+  // Save reminder to local database
+  Future<bool> saveReminder(Reminder reminder) async {
+    try {
+      if (kIsWeb) {
+        print('Web platform: Skipping local database');
+        return true;
+      }
+
+      final db = await database;
+
+      await db.insert(
+        _remindersTable,
+        reminder.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      print('Reminder saved to local database: ${reminder.id}');
+      return true;
+    } catch (e) {
+      print('Error saving reminder to local database: $e');
+      return false;
+    }
+  }
+
+  // Get all reminders for a user
+  Future<List<Reminder>> getRemindersByUserId(String userId) async {
+    try {
+      if (kIsWeb) {
+        return [];
+      }
+
+      final db = await database;
+
+      final List<Map<String, dynamic>> maps = await db.query(
+        _remindersTable,
+        where: 'user_id = ?',
+        whereArgs: [userId],
+        orderBy: 'next_trigger ASC',
+      );
+
+      print('Retrieved ${maps.length} reminders for user: $userId');
+      return maps.map((map) => Reminder.fromMap(map)).toList();
+    } catch (e) {
+      print('Error getting reminders from local database: $e');
+      return [];
+    }
+  }
+
+  // Get active reminders for a user
+  Future<List<Reminder>> getActiveRemindersByUserId(String userId) async {
+    try {
+      if (kIsWeb) {
+        return [];
+      }
+
+      final db = await database;
+
+      final List<Map<String, dynamic>> maps = await db.query(
+        _remindersTable,
+        where: 'user_id = ? AND is_active = 1',
+        whereArgs: [userId],
+        orderBy: 'next_trigger ASC',
+      );
+
+      print('Retrieved ${maps.length} active reminders for user: $userId');
+      return maps.map((map) => Reminder.fromMap(map)).toList();
+    } catch (e) {
+      print('Error getting active reminders: $e');
+      return [];
+    }
+  }
+
+  // Get all active reminders (for rescheduling on app start)
+  Future<List<Reminder>> getAllActiveReminders() async {
+    try {
+      if (kIsWeb) {
+        return [];
+      }
+
+      final db = await database;
+
+      final List<Map<String, dynamic>> maps = await db.query(
+        _remindersTable,
+        where: 'is_active = 1',
+        orderBy: 'next_trigger ASC',
+      );
+
+      print('Retrieved ${maps.length} total active reminders');
+      return maps.map((map) => Reminder.fromMap(map)).toList();
+    } catch (e) {
+      print('Error getting all active reminders: $e');
+      return [];
+    }
+  }
+
+  // Get a single reminder by ID
+  Future<Reminder?> getReminderById(String reminderId) async {
+    try {
+      if (kIsWeb) {
+        return null;
+      }
+
+      final db = await database;
+
+      final List<Map<String, dynamic>> maps = await db.query(
+        _remindersTable,
+        where: 'id = ?',
+        whereArgs: [reminderId],
+        limit: 1,
+      );
+
+      if (maps.isNotEmpty) {
+        return Reminder.fromMap(maps.first);
+      }
+      return null;
+    } catch (e) {
+      print('Error getting reminder by ID: $e');
+      return null;
+    }
+  }
+
+  // Find reminder by message (for duplicate detection)
+  Future<Reminder?> findReminderByMessage(String userId, String message) async {
+    try {
+      if (kIsWeb) {
+        return null;
+      }
+
+      final db = await database;
+
+      // Search for reminders with similar message (case-insensitive)
+      final List<Map<String, dynamic>> maps = await db.query(
+        _remindersTable,
+        where: 'user_id = ? AND LOWER(message) LIKE ? AND is_active = 1',
+        whereArgs: [userId, '%${message.toLowerCase()}%'],
+        limit: 1,
+      );
+
+      if (maps.isNotEmpty) {
+        return Reminder.fromMap(maps.first);
+      }
+      return null;
+    } catch (e) {
+      print('Error finding reminder by message: $e');
+      return null;
+    }
+  }
+
+  // Update reminder
+  Future<bool> updateReminder(Reminder reminder) async {
+    try {
+      if (kIsWeb) {
+        return true;
+      }
+
+      final db = await database;
+
+      await db.update(
+        _remindersTable,
+        reminder.toMap(),
+        where: 'id = ?',
+        whereArgs: [reminder.id],
+      );
+
+      print('Reminder updated: ${reminder.id}');
+      return true;
+    } catch (e) {
+      print('Error updating reminder: $e');
+      return false;
+    }
+  }
+
+  // Delete a reminder
+  Future<bool> deleteReminder(String reminderId) async {
+    try {
+      if (kIsWeb) {
+        return true;
+      }
+
+      final db = await database;
+
+      await db.delete(
+        _remindersTable,
+        where: 'id = ?',
+        whereArgs: [reminderId],
+      );
+
+      print('Reminder deleted: $reminderId');
+      return true;
+    } catch (e) {
+      print('Error deleting reminder: $e');
+      return false;
+    }
+  }
+
+  // Delete all reminders for a user
+  Future<bool> deleteAllRemindersForUser(String userId) async {
+    try {
+      if (kIsWeb) {
+        return true;
+      }
+
+      final db = await database;
+
+      final count = await db.delete(
+        _remindersTable,
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+
+      print('Deleted $count reminders for user: $userId');
+      return true;
+    } catch (e) {
+      print('Error deleting user reminders: $e');
+      return false;
+    }
+  }
+
+  // Get reminders that are due (next_trigger <= now)
+  Future<List<Reminder>> getDueReminders() async {
+    try {
+      if (kIsWeb) {
+        return [];
+      }
+
+      final db = await database;
+      final now = DateTime.now().toIso8601String();
+
+      final List<Map<String, dynamic>> maps = await db.query(
+        _remindersTable,
+        where: 'is_active = 1 AND next_trigger <= ?',
+        whereArgs: [now],
+        orderBy: 'next_trigger ASC',
+      );
+
+      print('Found ${maps.length} due reminders');
+      return maps.map((map) => Reminder.fromMap(map)).toList();
+    } catch (e) {
+      print('Error getting due reminders: $e');
+      return [];
+    }
+  }
+
+  // Get reminder count for a user
+  Future<int> getReminderCount(String userId) async {
+    try {
+      if (kIsWeb) {
+        return 0;
+      }
+
+      final db = await database;
+
+      final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM $_remindersTable WHERE user_id = ? AND is_active = 1',
+        [userId],
+      );
+
+      return result.first['count'] as int? ?? 0;
+    } catch (e) {
+      print('Error getting reminder count: $e');
+      return 0;
+    }
+  }
+
+  // ==================== END REMINDER OPERATIONS ====================
+
   // Clear all data
   Future<bool> clearAllData() async {
     try {
@@ -582,6 +902,7 @@ class LocalDbService {
       final db = await database;
       await db.delete(_usersTable);
       await db.delete(_memoriesTable);
+      await db.delete(_remindersTable);
       print('All local data cleared');
       return true;
     } catch (e) {

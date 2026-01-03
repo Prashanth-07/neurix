@@ -117,6 +117,24 @@ class AuthService {
       
       _isInitialized = true;
       print('AuthService initialized successfully');
+
+      // Check if user is already logged in and emit the correct status
+      if (_auth.currentUser != null) {
+        print('User already logged in: ${_auth.currentUser!.email}');
+        final firebaseUser = _auth.currentUser!;
+        final userModel = UserModel(
+          uid: firebaseUser.uid,
+          email: firebaseUser.email ?? '',
+          displayName: firebaseUser.displayName,
+          photoUrl: firebaseUser.photoURL,
+          createdAt: DateTime.now(),
+          lastLoginAt: DateTime.now(),
+          isEmailVerified: firebaseUser.emailVerified,
+        );
+        _currentUser = userModel;
+        _userController.add(userModel);
+        _updateAuthStatus(AuthStatus.authenticated);
+      }
     } catch (e) {
       print('Error initializing AuthService: $e');
       _updateAuthStatus(AuthStatus.error);

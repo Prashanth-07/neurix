@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/auth_service.dart';
@@ -11,6 +12,62 @@ import 'services/voice_service.dart';
 import 'services/llm_service.dart';
 import 'utils/constants.dart';
 import 'models/user_model.dart';
+import 'widgets/floating_bubble.dart';
+
+/// Overlay entry point - runs in separate isolate
+@pragma('vm:entry-point')
+void overlayMain() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MaterialApp(
+    debugShowCheckedModeBanner: false,
+    home: FloatingBubble(),
+  ));
+}
+
+/// Initialize notification channels early - required for foreground services
+Future<void> _initializeNotificationChannels() async {
+  final FlutterLocalNotificationsPlugin notifications =
+      FlutterLocalNotificationsPlugin();
+
+  // Initialize the plugin first
+  const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const initSettings = InitializationSettings(android: androidSettings);
+  await notifications.initialize(initSettings);
+
+  final androidPlugin = notifications.resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>();
+
+  if (androidPlugin != null) {
+    // Voice control notification channel
+    const voiceChannel = AndroidNotificationChannel(
+      'neurix_voice',
+      'Neurix Voice',
+      description: 'Voice interaction controls',
+      importance: Importance.low,
+    );
+    await androidPlugin.createNotificationChannel(voiceChannel);
+
+    // Background voice service channel (for foreground service)
+    const bgVoiceChannel = AndroidNotificationChannel(
+      'neurix_voice_bg',
+      'Neurix Voice Background',
+      description: 'Voice recording in background',
+      importance: Importance.low,
+    );
+    await androidPlugin.createNotificationChannel(bgVoiceChannel);
+
+    // Reminders notification channel
+    const remindersChannel = AndroidNotificationChannel(
+      'neurix_reminders',
+      'Neurix Reminders',
+      description: 'Reminder notifications',
+      importance: Importance.high,
+    );
+    await androidPlugin.createNotificationChannel(remindersChannel);
+
+    print('Notification channels created');
+  }
+}
 
 void main() async {
   try {
@@ -25,6 +82,9 @@ void main() async {
     } catch (e) {
       print('Warning: Could not load .env file: $e');
     }
+
+    // Initialize notification channels early (required for foreground services)
+    await _initializeNotificationChannels();
 
     // Initialize Firebase
     await Firebase.initializeApp(
@@ -105,11 +165,11 @@ class MyApp extends StatelessWidget {
             Provider<AuthService>.value(value: authService),
             StreamProvider<AuthStatus>(
               create: (_) => authService.authStatusStream,
-              initialData: AuthStatus.unauthenticated,
+              initialData: authService.currentAuthStatus,
             ),
             StreamProvider<UserModel?>(
               create: (_) => authService.user,
-              initialData: null,
+              initialData: authService.currentUser,
             ),
             ChangeNotifierProvider<VoiceService>(
               create: (_) => VoiceService(),
@@ -140,11 +200,16 @@ class MyApp extends StatelessWidget {
       final authService = AuthService();
       await authService.initialize();
 
-      // Initialize LLM Service (singleton)
+      // Initialize LLM Service (singleton) - don't block on failure
       print('Initializing LLM Service...');
       final llmService = LLMService();
-      await llmService.initialize();
-      print('LLM Service ready');
+      try {
+        await llmService.initialize();
+        print('LLM Service ready');
+      } catch (e) {
+        print('LLM Service initialization failed (will use fallback): $e');
+        // Continue without LLM - fallback will be used
+      }
 
       return authService;
     } catch (e) {

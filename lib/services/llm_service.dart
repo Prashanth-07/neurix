@@ -1,59 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/memory_model.dart';
 
 enum LLMStatus {
   uninitialized,
-  downloading,
   loading,
   ready,
   error,
 }
 
-class ReminderRequest {
-  final String task;
-  final int timeInMinutes;
-  final String type; // 'timer', 'alarm', 'scheduled'
-  final DateTime? scheduledTime;
-  final String originalText;
-
-  ReminderRequest({
-    required this.task,
-    required this.timeInMinutes,
-    required this.type,
-    this.scheduledTime,
-    required this.originalText,
-  });
-
-  factory ReminderRequest.fromJson(Map<String, dynamic> json) {
-    return ReminderRequest(
-      task: json['task'] ?? '',
-      timeInMinutes: json['timeInMinutes'] ?? 0,
-      type: json['type'] ?? 'timer',
-      scheduledTime: json['scheduledTime'] != null 
-          ? DateTime.parse(json['scheduledTime'])
-          : null,
-      originalText: json['originalText'] ?? '',
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'task': task,
-      'timeInMinutes': timeInMinutes,
-      'type': type,
-      'scheduledTime': scheduledTime?.toIso8601String(),
-      'originalText': originalText,
-    };
-  }
-}
-
+/// LLM Service for Neurix App
+///
+/// Handles 3 types of LLM calls:
+/// 1. detectIntent() - Classify user input into: save, search, reminder, cancel_reminder, unclear
+/// 2. generateContextualResponse() - Generate response for memory search results
+/// 3. parseReminderFromVoice() - Parse reminder details (recurring/one-time, time, message)
 class LLMService {
   static final LLMService _instance = LLMService._internal();
   factory LLMService() => _instance;
@@ -145,19 +108,23 @@ class LLMService {
     _statusController.add(status);
   }
 
-  // Generate contextual response based on memories using Groq API
+  /// ===========================================
+  /// LLM CALL 2: SEARCH RESPONSE GENERATION
+  /// ===========================================
+  /// Generates a natural response based on retrieved memories
   Future<String> generateContextualResponse(
     String query,
     List<Memory> relevantMemories,
   ) async {
+    print('[LLM-2] generateContextualResponse() - Query: "$query"');
+
     try {
-      print('   [LLM] Status: $_status');
       if (_status != LLMStatus.ready) {
-        print('   [LLM] Not ready, using fallback');
+        print('[LLM-2] Not ready, using fallback');
         return _getFallbackResponse(query, relevantMemories);
       }
 
-      // Sort memories by date (most recent first) and prepare context
+      // Sort memories by date (most recent first)
       List<Memory> sortedMemories = List.from(relevantMemories)
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -174,62 +141,312 @@ class LLMService {
               })
               .join("\n");
 
-      // System prompt for Llama 3 8B - direct and simple
-      String systemPrompt = '''Answer the question using ONLY the memories provided. Give direct answers in under 20 words.
+      String systemPrompt = '''Answer using ONLY the memories provided. Be direct, under 20 words.
+- Use MOST RECENT memory if there are conflicts
+- Never say "according to memory" - just answer
+- Say "I don't know" only if no relevant memory exists''';
 
-Rules:
-1. If memories conflict, use the MOST RECENT one
-2. Never say "according to memory" - just answer directly
-3. Say "I don't know" only if no relevant memory exists
-
-Example: Memory says "keys in bag" → Answer "Your keys are in your bag."''';
-
-      // User message with memory context
       String userMessage = '''Question: $query
 
-Here are the relevant memories to answer this question:
-
+Memories:
 $memoryContext''';
 
-      print('   [LLM] Sending to Groq API...');
-      print('   [LLM] Memory context:\n$memoryContext');
+      print('[LLM-2] Calling Groq API with ${sortedMemories.length} memories...');
 
-      // Make API call to Groq
       String response = await _callGroqAPI(systemPrompt, userMessage);
       String cleanedResponse = _cleanResponse(response);
-      print('   [LLM] Raw response: "$response"');
-      print('   [LLM] Cleaned response: "$cleanedResponse"');
+      print('[LLM-2] Response: "$cleanedResponse"');
       return cleanedResponse;
 
     } catch (e) {
-      print('   [LLM] Error: $e');
+      print('[LLM-2] Error: $e');
       return _getFallbackResponse(query, relevantMemories);
     }
   }
 
-  // Parse reminder requests using Groq API
-  Future<ReminderRequest?> parseReminderRequest(String userInput) async {
+  /// ===========================================
+  /// LLM CALL 1: INTENT DETECTION
+  /// ===========================================
+  /// Detects user intent from voice input
+  /// Returns: 'save', 'search', 'reminder', 'cancel_reminder', or 'unclear'
+  Future<String> detectIntent(String userInput) async {
+    print('[LLM-1] detectIntent() - Input: "$userInput"');
+
     try {
       if (_status != LLMStatus.ready) {
-        return _parseFallbackReminder(userInput);
+        print('[LLM-1] Not ready, initializing...');
+        await initialize();
       }
 
-      String systemPrompt = '''Extract reminder info as JSON only. No other text.''';
+      String systemPrompt = '''Classify user input into ONE intent. Reply with ONLY one word.
 
-      String userMessage = '''Parse: "$userInput"
+Intents:
+- save: User states information to remember (locations, facts, passwords, events)
+- search: User asks a question or wants to find saved information
+- reminder: User wants to set a new reminder (contains "remind me", "set reminder", time phrases)
+- cancel_reminder: User wants to stop/cancel/delete a reminder
+- unclear: Input is too vague or doesn't fit any category
 
-Return JSON: {"task": "what to do", "timeInMinutes": number, "type": "timer|alarm", "scheduledTime": null}
+Reply with exactly one word: save, search, reminder, cancel_reminder, or unclear''';
+
+      String userMessage = userInput;
+
+      print('[LLM-1] Calling Groq API...');
+      String response = await _callGroqAPI(systemPrompt, userMessage);
+      String intent = response.toLowerCase().trim();
+
+      // Extract intent word from response
+      if (intent.contains('cancel_reminder') || intent.contains('cancel reminder')) {
+        intent = 'cancel_reminder';
+      } else if (intent.contains('save')) {
+        intent = 'save';
+      } else if (intent.contains('search')) {
+        intent = 'search';
+      } else if (intent.contains('reminder')) {
+        intent = 'reminder';
+      } else if (intent.contains('unclear')) {
+        intent = 'unclear';
+      } else {
+        print('[LLM-1] Unexpected response: "$response", using fallback');
+        return _detectIntentFallback(userInput);
+      }
+
+      print('[LLM-1] Detected intent: "$intent"');
+      return intent;
+
+    } catch (e) {
+      print('[LLM-1] Error: $e, using fallback');
+      return _detectIntentFallback(userInput);
+    }
+  }
+
+  /// Fallback intent detection using simple patterns (used when LLM fails)
+  String _detectIntentFallback(String userInput) {
+    final lowerText = userInput.toLowerCase().trim();
+    print('[LLM] _detectIntentFallback() - Input: "$lowerText"');
+
+    // Check cancel reminder first
+    if ((lowerText.contains('cancel') || lowerText.contains('stop') ||
+         lowerText.contains('delete') || lowerText.contains('remove')) &&
+        lowerText.contains('reminder')) {
+      return 'cancel_reminder';
+    }
+
+    // Check reminder patterns
+    if (lowerText.contains('remind me') || lowerText.contains('set a reminder') ||
+        lowerText.contains('set reminder') ||
+        (lowerText.contains('remind') && (lowerText.contains('every') ||
+         lowerText.contains('in ') || lowerText.contains('at ') || lowerText.contains('after ')))) {
+      return 'reminder';
+    }
+
+    // Search patterns - questions
+    final searchStarters = ['where', 'what', 'when', 'how', 'find', 'search', 'look for', 'do i have', 'did i'];
+    for (var pattern in searchStarters) {
+      if (lowerText.startsWith(pattern) || lowerText.contains(' $pattern')) {
+        return 'search';
+      }
+    }
+    if (lowerText.endsWith('?')) {
+      return 'search';
+    }
+
+    // Save patterns - statements about storing things
+    final saveIndicators = ['i put', 'i left', 'i kept', 'i placed', 'i stored', 'i parked',
+                           'i have put', 'i have left', 'i have kept', 'i have placed', 'i have stored',
+                           'remember that', 'my password', 'my pin', 'meeting at', 'meeting is'];
+    for (var pattern in saveIndicators) {
+      if (lowerText.contains(pattern)) {
+        return 'save';
+      }
+    }
+
+    // If it's a longer statement (3+ words), assume it's something to save
+    if (lowerText.split(' ').length >= 3) {
+      return 'save';
+    }
+
+    return 'unclear';
+  }
+
+  /// Extract the memory content from user input
+  /// Removes command words like "remember", "save", etc.
+  String extractMemoryContent(String userInput) {
+    var content = userInput.trim();
+
+    // Remove common prefixes
+    final prefixesToRemove = [
+      'remember that',
+      'remember',
+      'save that',
+      'save',
+      'store that',
+      'store',
+      'note that',
+      'note',
+      'keep in mind that',
+      'keep in mind',
+      'don\'t forget that',
+      'don\'t forget',
+    ];
+
+    final lowerContent = content.toLowerCase();
+    for (var prefix in prefixesToRemove) {
+      if (lowerContent.startsWith(prefix)) {
+        content = content.substring(prefix.length).trim();
+        break;
+      }
+    }
+
+    // Capitalize first letter
+    if (content.isNotEmpty) {
+      content = content[0].toUpperCase() + content.substring(1);
+    }
+
+    return content;
+  }
+
+  /// ===========================================
+  /// LLM CALL 3: REMINDER PARSING
+  /// ===========================================
+
+  /// ===========================================
+  /// LLM CALL 4: CANCEL REMINDER PARSING
+  /// ===========================================
+  /// Parses which reminder to cancel from user input
+  /// Returns: 'all' for all reminders, or the reminder keyword to search
+  Future<String?> parseCancelReminderRequest(String userInput) async {
+    print('[LLM-4] parseCancelReminderRequest() - Input: "$userInput"');
+
+    try {
+      if (_status != LLMStatus.ready) {
+        print('[LLM-4] Not ready, initializing...');
+        await initialize();
+      }
+
+      String systemPrompt = '''Extract which reminder to cancel from user input.
+
+Rules:
+- If user wants to cancel ALL reminders, return exactly: all
+- If user wants to cancel a SPECIFIC reminder, return just the keyword (e.g., "water", "medicine", "call mom")
+- Extract the main subject/task word from the request
 
 Examples:
-"call mom in 30 min" → {"task":"call mom","timeInMinutes":30,"type":"timer","scheduledTime":null}
-"medicine at 8pm" → {"task":"medicine","timeInMinutes":0,"type":"alarm","scheduledTime":"2024-01-01T20:00:00Z"}''';
+"delete all reminders" → all
+"cancel all my reminders" → all
+"stop all reminders" → all
+"remove every reminder" → all
+"cancel my water reminder" → water
+"delete the medicine reminder" → medicine
+"stop reminding me to drink water" → water
+"remove the call mom reminder" → call mom
+"I don't want the exercise reminder anymore" → exercise
 
+Return ONLY the keyword or "all", nothing else.''';
+
+      String userMessage = userInput;
+
+      print('[LLM-4] Calling Groq API...');
       String response = await _callGroqAPI(systemPrompt, userMessage);
-      return _parseReminderFromResponse(response, userInput);
-      
+      String result = response.toLowerCase().trim();
+
+      // Clean up response
+      result = result.replaceAll('"', '').replaceAll("'", '').trim();
+
+      print('[LLM-4] Result: "$result"');
+
+      if (result.isEmpty) {
+        return null;
+      }
+
+      return result;
+
     } catch (e) {
-      print('Error parsing reminder request: $e');
-      return _parseFallbackReminder(userInput);
+      print('[LLM-4] Error: $e');
+      return null;
+    }
+  }
+  /// Parses reminder details from voice input
+  /// Returns: type (oneTime/recurring), message, intervalMinutes, scheduledTime
+  Future<Map<String, dynamic>?> parseReminderFromVoice(String userInput) async {
+    print('[LLM-3] parseReminderFromVoice() - Input: "$userInput"');
+
+    try {
+      if (_status != LLMStatus.ready) {
+        print('[LLM-3] Not ready, initializing...');
+        await initialize();
+      }
+
+      final now = DateTime.now();
+      final currentTimeStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}T${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00';
+
+      String systemPrompt = '''Parse reminder and return JSON only.
+
+Current datetime: $currentTimeStr
+
+JSON format:
+{"type":"oneTime|recurring","message":"Task","intervalMinutes":number|null,"scheduledTime":"ISO8601"|null}
+
+Rules:
+- "every X min/hour" → recurring, intervalMinutes = X (in minutes)
+- "in/after X min/hour" → oneTime, scheduledTime = now + X
+- "at X PM/AM" → oneTime, scheduledTime = that time today/tomorrow
+- message = just the task (capitalized), no time words
+
+Examples:
+"remind me to drink water every 30 minutes" → {"type":"recurring","message":"Drink water","intervalMinutes":30,"scheduledTime":null}
+"remind me to call mom after 5 minutes" → {"type":"oneTime","message":"Call mom","intervalMinutes":null,"scheduledTime":"$currentTimeStr + 5 min"}
+
+Return ONLY JSON.''';
+
+      String userMessage = userInput;
+
+      print('[LLM-3] Calling Groq API...');
+      String response = await _callGroqAPI(systemPrompt, userMessage);
+      print('[LLM-3] Response: "$response"');
+
+      // Parse JSON from response
+      String jsonStr = response.trim();
+      int startIndex = jsonStr.indexOf('{');
+      int endIndex = jsonStr.lastIndexOf('}');
+
+      if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+        jsonStr = jsonStr.substring(startIndex, endIndex + 1);
+      }
+
+      Map<String, dynamic> parsed = jsonDecode(jsonStr);
+      print('[LLM-3] Parsed: $parsed');
+
+      // Convert scheduledTime string to DateTime if present
+      if (parsed['scheduledTime'] != null && parsed['scheduledTime'] is String) {
+        try {
+          parsed['scheduledTime'] = DateTime.parse(parsed['scheduledTime']);
+        } catch (e) {
+          print('[LLM-3] Failed to parse scheduledTime, will use default');
+          parsed['scheduledTime'] = null;
+        }
+      }
+
+      // Validate required fields
+      if (parsed['message'] == null || parsed['type'] == null) {
+        print('[LLM-3] Missing required fields');
+        return null;
+      }
+
+      // Ensure proper defaults
+      if (parsed['type'] == 'oneTime' && parsed['scheduledTime'] == null) {
+        parsed['scheduledTime'] = DateTime.now().add(const Duration(minutes: 5));
+      } else if (parsed['type'] == 'recurring') {
+        if (parsed['intervalMinutes'] == null || parsed['intervalMinutes'] == 0) {
+          parsed['intervalMinutes'] = 30;
+        }
+      }
+
+      return parsed;
+
+    } catch (e) {
+      print('[LLM-3] Error: $e');
+      return null;
     }
   }
 
@@ -271,65 +488,6 @@ Examples:
   }
 
   // Helper methods
-
-  ReminderRequest? _parseReminderFromResponse(String response, String originalInput) {
-    try {
-      // Clean the response to extract JSON
-      String jsonStr = response.trim();
-      
-      // Find JSON content between braces
-      int startIndex = jsonStr.indexOf('{');
-      int endIndex = jsonStr.lastIndexOf('}');
-      
-      if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-        jsonStr = jsonStr.substring(startIndex, endIndex + 1);
-      }
-      
-      Map<String, dynamic> parsed = jsonDecode(jsonStr);
-      parsed['originalText'] = originalInput;
-      
-      return ReminderRequest.fromJson(parsed);
-    } catch (e) {
-      print('Error parsing reminder JSON: $e');
-      return _parseFallbackReminder(originalInput);
-    }
-  }
-
-  ReminderRequest? _parseFallbackReminder(String input) {
-    // Simple pattern-based fallback parsing
-    String lowerInput = input.toLowerCase();
-    
-    // Extract task
-    String task = input;
-    if (lowerInput.contains('remind me to ')) {
-      task = input.split('remind me to ')[1].split(' in ')[0].split(' at ')[0];
-    }
-    
-    // Extract time
-    int minutes = 0;
-    String type = 'timer';
-    
-    if (lowerInput.contains(' minutes')) {
-      RegExp exp = RegExp(r'(\d+)\s*minutes?');
-      Match? match = exp.firstMatch(lowerInput);
-      if (match != null) {
-        minutes = int.parse(match.group(1)!);
-      }
-    } else if (lowerInput.contains(' hour')) {
-      RegExp exp = RegExp(r'(\d+)\s*hours?');
-      Match? match = exp.firstMatch(lowerInput);
-      if (match != null) {
-        minutes = int.parse(match.group(1)!) * 60;
-      }
-    }
-    
-    return ReminderRequest(
-      task: task.trim(),
-      timeInMinutes: minutes,
-      type: type,
-      originalText: input,
-    );
-  }
 
   String _getFallbackResponse(String query, List<Memory> memories) {
     if (memories.isEmpty) {
