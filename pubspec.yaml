@@ -49,6 +49,7 @@ dependencies:
   # Local Storage
   sqflite: ^2.3.2
   path: ^1.9.0
+  shared_preferences: ^2.2.2
   
   # Connectivity
   connectivity_plus: ^5.0.2

@@ -1,13 +1,120 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import '../models/reminder_model.dart';
 import 'local_db_service.dart';
+
+/// Top-level callback for AndroidAlarmManager - runs in isolate when alarm fires
+/// This enables TTS to speak when the notification triggers
+@pragma('vm:entry-point')
+Future<void> alarmCallback(int alarmId) async {
+  print('[AlarmCallback] ===== ALARM FIRED =====');
+  print('[AlarmCallback] Alarm ID: $alarmId');
+
+  try {
+    // Ensure Flutter bindings are initialized for background isolate
+    DartPluginRegistrant.ensureInitialized();
+
+    // Get reminder data from SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final reminderJson = prefs.getString('alarm_$alarmId');
+
+    if (reminderJson == null) {
+      print('[AlarmCallback] No reminder data found for alarm $alarmId');
+      return;
+    }
+
+    final reminderData = jsonDecode(reminderJson) as Map<String, dynamic>;
+    final message = reminderData['message'] as String? ?? 'Reminder';
+    final reminderId = reminderData['id'] as String? ?? '';
+    final isRecurring = reminderData['isRecurring'] as bool? ?? false;
+    final intervalMinutes = reminderData['intervalMinutes'] as int?;
+
+    print('[AlarmCallback] Message: "$message"');
+    print('[AlarmCallback] Is Recurring: $isRecurring');
+
+    // Initialize and show notification
+    final notifications = FlutterLocalNotificationsPlugin();
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initSettings = InitializationSettings(android: androidSettings);
+    await notifications.initialize(initSettings);
+
+    final notificationId = 1000 + alarmId % 10000;
+    final androidDetails = AndroidNotificationDetails(
+      'neurix_reminders',
+      'Neurix Reminders',
+      channelDescription: 'Reminder notifications',
+      importance: Importance.high,
+      priority: Priority.high,
+      autoCancel: false,
+      fullScreenIntent: true,
+      category: AndroidNotificationCategory.alarm,
+      actions: isRecurring
+          ? [
+              const AndroidNotificationAction('snooze', 'Snooze 10min', cancelNotification: true),
+              const AndroidNotificationAction('stop', 'Stop Reminder', cancelNotification: true),
+            ]
+          : [
+              const AndroidNotificationAction('snooze', 'Snooze 10min', cancelNotification: true),
+              const AndroidNotificationAction('dismiss', 'Dismiss', cancelNotification: true),
+            ],
+    );
+
+    await notifications.show(
+      notificationId,
+      'Reminder: $message',
+      message,
+      NotificationDetails(android: androidDetails),
+      payload: reminderId,
+    );
+    print('[AlarmCallback] Notification shown');
+
+    // Speak the reminder using TTS
+    try {
+      final tts = FlutterTts();
+      await tts.setLanguage('en-US');
+      await tts.setSpeechRate(0.5);
+      await tts.setVolume(1.0);
+      await tts.awaitSpeakCompletion(true);
+      await tts.speak('Reminder: $message');
+      print('[AlarmCallback] TTS completed');
+    } catch (ttsError) {
+      print('[AlarmCallback] TTS error (non-fatal): $ttsError');
+    }
+
+    // For recurring reminders, schedule the next alarm
+    if (isRecurring && intervalMinutes != null && intervalMinutes > 0) {
+      final nextAlarmTime = DateTime.now().add(Duration(minutes: intervalMinutes));
+      print('[AlarmCallback] Scheduling next recurring alarm for: $nextAlarmTime');
+
+      await AndroidAlarmManager.oneShotAt(
+        nextAlarmTime,
+        alarmId,
+        alarmCallback,
+        exact: true,
+        wakeup: true,
+        rescheduleOnReboot: true,
+        allowWhileIdle: true,
+      );
+    } else {
+      // Clean up one-time reminder data
+      await prefs.remove('alarm_$alarmId');
+      print('[AlarmCallback] One-time reminder completed, cleaned up');
+    }
+
+    print('[AlarmCallback] ===== ALARM COMPLETE =====');
+  } catch (e, stack) {
+    print('[AlarmCallback] Error: $e');
+    print('[AlarmCallback] Stack: $stack');
+  }
+}
 
 class ReminderService {
   static final ReminderService _instance = ReminderService._internal();
@@ -144,7 +251,9 @@ class ReminderService {
     }
   }
 
-  /// Schedule a notification for a reminder using flutter_local_notifications
+  /// Schedule a notification for a reminder
+  /// Primary: AndroidAlarmManager with TTS callback
+  /// Fallback: flutter_local_notifications zonedSchedule (no TTS)
   Future<void> _scheduleReminderNotification(Reminder reminder) async {
     if (!reminder.isActive || reminder.nextTrigger == null) return;
 
@@ -155,8 +264,63 @@ class ReminderService {
       return;
     }
 
-    final notificationId = _baseNotificationId + reminder.id.hashCode.abs() % 10000;
+    final alarmId = reminder.id.hashCode.abs() % 100000;
+    final notificationId = _baseNotificationId + alarmId % 10000;
 
+    print('[ReminderService] ===== SCHEDULING NOTIFICATION =====');
+    print('[ReminderService] Message: "${reminder.message}"');
+    print('[ReminderService] Now (local): ${DateTime.now()}');
+    print('[ReminderService] Target (DateTime): ${reminder.nextTrigger}');
+    print('[ReminderService] Time until trigger: ${reminder.nextTrigger!.difference(DateTime.now()).inSeconds} seconds');
+    print('[ReminderService] Alarm ID: $alarmId');
+    print('[ReminderService] Notification ID: $notificationId');
+
+    // PRIMARY: Try AndroidAlarmManager with TTS callback
+    bool alarmScheduled = false;
+    try {
+      // Store reminder data for the callback to retrieve
+      final prefs = await SharedPreferences.getInstance();
+      final reminderData = jsonEncode({
+        'id': reminder.id,
+        'message': reminder.message,
+        'isRecurring': reminder.type == ReminderType.recurring,
+        'intervalMinutes': reminder.intervalMinutes,
+      });
+      await prefs.setString('alarm_$alarmId', reminderData);
+      print('[ReminderService] Stored reminder data for alarm callback');
+
+      // Schedule the alarm with callback
+      alarmScheduled = await AndroidAlarmManager.oneShotAt(
+        reminder.nextTrigger!,
+        alarmId,
+        alarmCallback,
+        exact: true,
+        wakeup: true,
+        rescheduleOnReboot: true,
+        allowWhileIdle: true,
+      );
+      print('[ReminderService] AndroidAlarmManager scheduled: $alarmScheduled');
+    } catch (e) {
+      print('[ReminderService] AndroidAlarmManager failed: $e');
+      alarmScheduled = false;
+    }
+
+    // FALLBACK: Use zonedSchedule if AlarmManager fails
+    // This ensures notification shows even if TTS doesn't work
+    if (!alarmScheduled) {
+      print('[ReminderService] Using fallback: zonedSchedule (no TTS)');
+      await _scheduleFallbackNotification(reminder, notificationId);
+    } else {
+      // Also schedule fallback as backup - it will be cancelled if alarm fires
+      print('[ReminderService] Scheduling fallback notification as backup');
+      await _scheduleFallbackNotification(reminder, notificationId);
+    }
+
+    print('[ReminderService] ================================');
+  }
+
+  /// Fallback notification scheduling using flutter_local_notifications
+  Future<void> _scheduleFallbackNotification(Reminder reminder, int notificationId) async {
     final androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -164,7 +328,7 @@ class ReminderService {
       importance: Importance.high,
       priority: Priority.high,
       autoCancel: false,
-      fullScreenIntent: true, // Wake up the device
+      fullScreenIntent: true,
       category: AndroidNotificationCategory.alarm,
       actions: reminder.type == ReminderType.recurring
           ? [
@@ -178,24 +342,7 @@ class ReminderService {
     );
 
     final notificationDetails = NotificationDetails(android: androidDetails);
-
-    // Convert to TZDateTime for scheduling
     final scheduledDate = tz.TZDateTime.from(reminder.nextTrigger!, tz.local);
-
-    // Check permission status before scheduling
-    final androidPlugin = _notifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    final canScheduleExact = await androidPlugin?.canScheduleExactNotifications();
-
-    print('[ReminderService] ===== SCHEDULING NOTIFICATION =====');
-    print('[ReminderService] Message: "${reminder.message}"');
-    print('[ReminderService] Now (local): ${DateTime.now()}');
-    print('[ReminderService] Target (DateTime): ${reminder.nextTrigger}');
-    print('[ReminderService] Target (TZDateTime): $scheduledDate');
-    print('[ReminderService] Time until trigger: ${reminder.nextTrigger!.difference(DateTime.now()).inSeconds} seconds');
-    print('[ReminderService] Notification ID: $notificationId');
-    print('[ReminderService] Can schedule exact alarms: $canScheduleExact');
-    print('[ReminderService] ================================');
 
     await _notifications.zonedSchedule(
       notificationId,
@@ -361,11 +508,20 @@ class ReminderService {
     try {
       await _dbService.deleteReminder(reminderId);
 
+      final alarmId = reminderId.hashCode.abs() % 100000;
+      final notificationId = _baseNotificationId + alarmId % 10000;
+
+      // Cancel the AndroidAlarmManager alarm
+      await AndroidAlarmManager.cancel(alarmId);
+
       // Cancel the notification
-      final notificationId = _baseNotificationId + reminderId.hashCode.abs() % 10000;
       await _notifications.cancel(notificationId);
 
-      print('[ReminderService] Cancelled reminder: $reminderId');
+      // Clean up stored alarm data
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('alarm_$alarmId');
+
+      print('[ReminderService] Cancelled reminder: $reminderId (alarm: $alarmId)');
       return true;
     } catch (e) {
       print('[ReminderService] Error cancelling reminder: $e');
