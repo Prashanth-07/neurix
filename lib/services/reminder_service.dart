@@ -12,7 +12,7 @@ import '../models/reminder_model.dart';
 import 'local_db_service.dart';
 
 /// Top-level callback for AndroidAlarmManager - runs in isolate when alarm fires
-/// This enables TTS to speak when the notification triggers
+/// This enables TTS to speak when the notification triggers and launches the alarm screen
 @pragma('vm:entry-point')
 Future<void> alarmCallback(int alarmId) async {
   print('[AlarmCallback] ===== ALARM FIRED =====');
@@ -23,11 +23,25 @@ Future<void> alarmCallback(int alarmId) async {
     DartPluginRegistrant.ensureInitialized();
 
     // Get reminder data from SharedPreferences
+    // IMPORTANT: Reload SharedPreferences to get fresh data from disk
+    // The background isolate may have a stale cached instance
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload(); // Force reload from disk to get latest data
+    print('[AlarmCallback] SharedPreferences reloaded');
+
     final reminderJson = prefs.getString('alarm_$alarmId');
+    print('[AlarmCallback] Looking for key: alarm_$alarmId, found: ${reminderJson != null}');
 
     if (reminderJson == null) {
-      print('[AlarmCallback] No reminder data found for alarm $alarmId');
+      // This is likely a stale alarm from a previous session - cancel it silently
+      print('[AlarmCallback] No reminder data found for alarm $alarmId (stale alarm, ignoring)');
+      // Try to cancel this stale alarm to prevent future triggers
+      try {
+        await AndroidAlarmManager.cancel(alarmId);
+        print('[AlarmCallback] Cancelled stale alarm $alarmId');
+      } catch (e) {
+        print('[AlarmCallback] Could not cancel stale alarm: $e');
+      }
       return;
     }
 
@@ -36,11 +50,43 @@ Future<void> alarmCallback(int alarmId) async {
     final reminderId = reminderData['id'] as String? ?? '';
     final isRecurring = reminderData['isRecurring'] as bool? ?? false;
     final intervalMinutes = reminderData['intervalMinutes'] as int?;
+    final scheduledTimeMs = reminderData['scheduledTimeMs'] as int?;
 
     print('[AlarmCallback] Message: "$message"');
     print('[AlarmCallback] Is Recurring: $isRecurring');
 
-    // Initialize and show notification
+    // For one-time alarms, check if the scheduled time has passed by more than 10 minutes
+    // This prevents stale alarms from firing when the app restarts
+    if (!isRecurring && scheduledTimeMs != null) {
+      final scheduledTime = DateTime.fromMillisecondsSinceEpoch(scheduledTimeMs);
+      final now = DateTime.now();
+      final difference = now.difference(scheduledTime);
+
+      if (difference.inMinutes > 10) {
+        print('[AlarmCallback] One-time alarm is too old (${difference.inMinutes}min past scheduled time), ignoring');
+        // Clean up ALL data for this stale alarm
+        await prefs.remove('alarm_$alarmId');
+        await AndroidAlarmManager.cancel(alarmId);
+        // Also clean up any active alarm data that might be related
+        final activeAlarmId = prefs.getInt('active_alarm_id');
+        if (activeAlarmId == alarmId) {
+          await prefs.remove('active_alarm_id');
+          await prefs.remove('active_alarm_message');
+          await prefs.remove('active_alarm_timestamp');
+          print('[AlarmCallback] Cleaned up stale active alarm data');
+        }
+        return;
+      }
+    }
+
+    // Store active alarm data for the app to pick up when it opens
+    // Include timestamp so we can expire old alarms
+    await prefs.setInt('active_alarm_id', alarmId);
+    await prefs.setString('active_alarm_message', message);
+    await prefs.setInt('active_alarm_timestamp', DateTime.now().millisecondsSinceEpoch);
+    print('[AlarmCallback] Stored active alarm for app launch (with timestamp)');
+
+    // Initialize and show notification with full-screen intent to launch the app
     final notifications = FlutterLocalNotificationsPlugin();
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
@@ -48,14 +94,16 @@ Future<void> alarmCallback(int alarmId) async {
 
     final notificationId = 1000 + alarmId % 10000;
     final androidDetails = AndroidNotificationDetails(
-      'neurix_reminders',
-      'Neurix Reminders',
-      channelDescription: 'Reminder notifications',
-      importance: Importance.high,
-      priority: Priority.high,
+      'neurix_alarms',
+      'Neurix Alarms',
+      channelDescription: 'Alarm notifications with full screen',
+      importance: Importance.max,
+      priority: Priority.max,
       autoCancel: false,
       fullScreenIntent: true,
+      ongoing: true,
       category: AndroidNotificationCategory.alarm,
+      visibility: NotificationVisibility.public,
       actions: isRecurring
           ? [
               const AndroidNotificationAction('snooze', 'Snooze 10min', cancelNotification: true),
@@ -72,17 +120,19 @@ Future<void> alarmCallback(int alarmId) async {
       'Reminder: $message',
       message,
       NotificationDetails(android: androidDetails),
-      payload: reminderId,
+      payload: '$alarmId|$message',
     );
-    print('[AlarmCallback] Notification shown');
+    print('[AlarmCallback] Notification shown with fullScreenIntent');
 
     // Speak the reminder using TTS
     try {
+      print('[AlarmCallback] Initializing TTS...');
       final tts = FlutterTts();
       await tts.setLanguage('en-US');
       await tts.setSpeechRate(0.5);
       await tts.setVolume(1.0);
       await tts.awaitSpeakCompletion(true);
+      print('[AlarmCallback] Speaking reminder...');
       await tts.speak('Reminder: $message');
       print('[AlarmCallback] TTS completed');
     } catch (ttsError) {
@@ -103,11 +153,8 @@ Future<void> alarmCallback(int alarmId) async {
         rescheduleOnReboot: true,
         allowWhileIdle: true,
       );
-    } else {
-      // Clean up one-time reminder data
-      await prefs.remove('alarm_$alarmId');
-      print('[AlarmCallback] One-time reminder completed, cleaned up');
     }
+    // Note: We don't clean up alarm data here anymore - it's cleaned up when user dismisses the alarm screen
 
     print('[AlarmCallback] ===== ALARM COMPLETE =====');
   } catch (e, stack) {
@@ -196,6 +243,9 @@ class ReminderService {
     // Request exact alarm permission (required for Android 12+)
     await _requestExactAlarmPermission(androidPlugin);
 
+    // Clean up any orphaned alarm data from previous sessions
+    await _cleanupOrphanedAlarmData();
+
     // Reschedule any active reminders on app start
     await _rescheduleAllActiveReminders();
 
@@ -237,13 +287,163 @@ class ReminderService {
     }
   }
 
+  /// Clean up ALL alarm-related data for a specific alarm ID
+  /// This ensures no stale data remains in SharedPreferences
+  Future<void> _cleanupAlarmData(int alarmId, {bool cancelAlarm = true}) async {
+    print('[ReminderService] Cleaning up all data for alarm $alarmId');
+
+    final prefs = await SharedPreferences.getInstance();
+
+    // Remove alarm-specific data
+    await prefs.remove('alarm_$alarmId');
+
+    // Remove active alarm data if it matches this alarm
+    final activeAlarmId = prefs.getInt('active_alarm_id');
+    if (activeAlarmId == alarmId) {
+      await prefs.remove('active_alarm_id');
+      await prefs.remove('active_alarm_message');
+      await prefs.remove('active_alarm_timestamp');
+      print('[ReminderService] Removed active alarm data for $alarmId');
+    }
+
+    // Cancel the Android alarm
+    if (cancelAlarm) {
+      await AndroidAlarmManager.cancel(alarmId);
+      print('[ReminderService] Cancelled Android alarm $alarmId');
+    }
+
+    // Cancel any related notification
+    final notificationId = _baseNotificationId + alarmId % 10000;
+    await _notifications.cancel(notificationId);
+    print('[ReminderService] Cancelled notification $notificationId');
+  }
+
+  /// Clean up orphaned alarm data from previous sessions
+  /// This runs on app startup to ensure no stale data causes issues
+  Future<void> _cleanupOrphanedAlarmData() async {
+    try {
+      print('[ReminderService] Checking for orphaned alarm data...');
+      final prefs = await SharedPreferences.getInstance();
+
+      // Get all keys that start with 'alarm_'
+      final allKeys = prefs.getKeys();
+      final alarmKeys = allKeys.where((key) => key.startsWith('alarm_')).toList();
+
+      print('[ReminderService] Found ${alarmKeys.length} alarm data entries');
+
+      // Get all active reminders to compare
+      final activeReminders = await _dbService.getAllActiveReminders();
+      final activeAlarmIds = activeReminders
+          .map((r) => r.id.hashCode.abs() % 100000)
+          .toSet();
+
+      final now = DateTime.now();
+
+      for (final key in alarmKeys) {
+        try {
+          final alarmIdStr = key.replaceFirst('alarm_', '');
+          final alarmId = int.tryParse(alarmIdStr);
+          if (alarmId == null) continue;
+
+          final dataJson = prefs.getString(key);
+          if (dataJson == null) {
+            // Empty data - clean up
+            await prefs.remove(key);
+            await AndroidAlarmManager.cancel(alarmId);
+            print('[ReminderService] Removed empty alarm data: $key');
+            continue;
+          }
+
+          final data = jsonDecode(dataJson) as Map<String, dynamic>;
+          final isRecurring = data['isRecurring'] as bool? ?? false;
+          final scheduledTimeMs = data['scheduledTimeMs'] as int?;
+
+          // For one-time alarms, check if they're expired
+          if (!isRecurring && scheduledTimeMs != null) {
+            final scheduledTime = DateTime.fromMillisecondsSinceEpoch(scheduledTimeMs);
+            final difference = now.difference(scheduledTime);
+
+            // If more than 10 minutes past scheduled time, clean up
+            if (difference.inMinutes > 10) {
+              print('[ReminderService] Found expired alarm data: $key (${difference.inMinutes}min past)');
+              await _cleanupAlarmData(alarmId);
+              continue;
+            }
+          }
+
+          // Check if there's no corresponding active reminder
+          if (!activeAlarmIds.contains(alarmId)) {
+            print('[ReminderService] Found orphaned alarm data: $key (no active reminder)');
+            await _cleanupAlarmData(alarmId);
+          }
+        } catch (e) {
+          print('[ReminderService] Error processing alarm key $key: $e');
+        }
+      }
+
+      // Also clean up stale active_alarm_* data
+      final activeAlarmId = prefs.getInt('active_alarm_id');
+      final activeAlarmTimestamp = prefs.getInt('active_alarm_timestamp');
+
+      if (activeAlarmId != null && activeAlarmTimestamp != null) {
+        final alarmTime = DateTime.fromMillisecondsSinceEpoch(activeAlarmTimestamp);
+        final difference = now.difference(alarmTime);
+
+        // If active alarm data is more than 5 minutes old, clean it up
+        if (difference.inMinutes > 5) {
+          print('[ReminderService] Cleaning up stale active alarm data (${difference.inMinutes}min old)');
+          await prefs.remove('active_alarm_id');
+          await prefs.remove('active_alarm_message');
+          await prefs.remove('active_alarm_timestamp');
+        }
+      }
+
+      print('[ReminderService] Orphaned alarm data cleanup complete');
+    } catch (e) {
+      print('[ReminderService] Error cleaning up orphaned alarm data: $e');
+    }
+  }
+
   /// Reschedule all active reminders (called on app start)
+  /// For one-time reminders that have already passed, mark them as inactive
+  /// For recurring reminders, reschedule the next occurrence
   Future<void> _rescheduleAllActiveReminders() async {
     try {
       final reminders = await _dbService.getAllActiveReminders();
       print('[ReminderService] Rescheduling ${reminders.length} active reminders');
 
+      final now = DateTime.now();
       for (final reminder in reminders) {
+        // Check if the reminder time has already passed
+        if (reminder.nextTrigger != null && reminder.nextTrigger!.isBefore(now)) {
+          if (reminder.type == ReminderType.oneTime) {
+            // One-time reminder that has passed - mark as inactive AND clean up ALL alarm data
+            print('[ReminderService] One-time reminder "${reminder.message}" has passed, marking inactive');
+            final inactiveReminder = reminder.copyWith(isActive: false);
+            await _dbService.updateReminder(inactiveReminder);
+
+            // Clean up ALL alarm-related data for this reminder
+            final alarmId = reminder.id.hashCode.abs() % 100000;
+            await _cleanupAlarmData(alarmId);
+
+            print('[ReminderService] Fully cleaned up expired reminder "${reminder.message}" (alarm $alarmId)');
+            continue;
+          } else if (reminder.type == ReminderType.recurring) {
+            // Recurring reminder - calculate the next future occurrence
+            print('[ReminderService] Recurring reminder "${reminder.message}" - calculating next occurrence');
+            final intervalMinutes = reminder.intervalMinutes ?? 30;
+            var nextTrigger = reminder.nextTrigger!;
+            while (nextTrigger.isBefore(now)) {
+              nextTrigger = nextTrigger.add(Duration(minutes: intervalMinutes));
+            }
+            final updatedReminder = reminder.copyWith(nextTrigger: nextTrigger);
+            await _dbService.updateReminder(updatedReminder);
+            await _scheduleReminderNotification(updatedReminder);
+            continue;
+          }
+        }
+
+        // Reminder is in the future, schedule it normally
         await _scheduleReminderNotification(reminder);
       }
     } catch (e) {
@@ -285,9 +485,10 @@ class ReminderService {
         'message': reminder.message,
         'isRecurring': reminder.type == ReminderType.recurring,
         'intervalMinutes': reminder.intervalMinutes,
+        'scheduledTimeMs': reminder.nextTrigger!.millisecondsSinceEpoch,
       });
       await prefs.setString('alarm_$alarmId', reminderData);
-      print('[ReminderService] Stored reminder data for alarm callback');
+      print('[ReminderService] Stored reminder data for alarm callback (scheduled: ${reminder.nextTrigger})');
 
       // Schedule the alarm with callback
       alarmScheduled = await AndroidAlarmManager.oneShotAt(
