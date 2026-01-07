@@ -10,6 +10,7 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import '../models/reminder_model.dart';
 import 'local_db_service.dart';
+import 'alarm_helper_service.dart';
 
 /// Top-level callback for AndroidAlarmManager - runs in isolate when alarm fires
 /// This enables TTS to speak when the notification triggers and launches the alarm screen
@@ -84,7 +85,17 @@ Future<void> alarmCallback(int alarmId) async {
     await prefs.setInt('active_alarm_id', alarmId);
     await prefs.setString('active_alarm_message', message);
     await prefs.setInt('active_alarm_timestamp', DateTime.now().millisecondsSinceEpoch);
-    print('[AlarmCallback] Stored active alarm for app launch (with timestamp)');
+    await prefs.setString('active_alarm_reminder_id', reminderId);
+    print('[AlarmCallback] Stored active alarm for app launch (with timestamp, reminderId: $reminderId)');
+
+    // Send wake-up broadcast to ensure device wakes up and app comes to foreground
+    // This is especially important for recurring alarms when the app is already in background
+    try {
+      await AlarmHelperService.sendWakeUpBroadcast();
+      print('[AlarmCallback] Wake-up broadcast sent');
+    } catch (e) {
+      print('[AlarmCallback] Wake-up broadcast failed (non-fatal): $e');
+    }
 
     // Initialize and show notification with full-screen intent to launch the app
     final notifications = FlutterLocalNotificationsPlugin();
@@ -92,7 +103,16 @@ Future<void> alarmCallback(int alarmId) async {
     const initSettings = InitializationSettings(android: androidSettings);
     await notifications.initialize(initSettings);
 
-    final notificationId = 1000 + alarmId % 10000;
+    // Use a unique notification ID for each alarm trigger (especially for recurring)
+    // This forces Android to treat it as a new notification and properly trigger fullScreenIntent
+    final notificationId = DateTime.now().millisecondsSinceEpoch % 100000;
+
+    // Cancel any previous alarm notifications to ensure clean state
+    // This helps Android properly trigger the fullScreenIntent for the new notification
+    final previousNotificationId = 1000 + alarmId % 10000;
+    await notifications.cancel(previousNotificationId);
+    print('[AlarmCallback] Cancelled previous notification: $previousNotificationId');
+
     final androidDetails = AndroidNotificationDetails(
       'neurix_alarms',
       'Neurix Alarms',
@@ -102,6 +122,8 @@ Future<void> alarmCallback(int alarmId) async {
       autoCancel: false,
       fullScreenIntent: true,
       ongoing: true,
+      playSound: true,
+      enableVibration: true,
       category: AndroidNotificationCategory.alarm,
       visibility: NotificationVisibility.public,
       actions: isRecurring
@@ -140,19 +162,45 @@ Future<void> alarmCallback(int alarmId) async {
     }
 
     // For recurring reminders, schedule the next alarm
+    // BUT FIRST: Reload prefs and verify the alarm data still exists
+    // This prevents rescheduling deleted reminders
     if (isRecurring && intervalMinutes != null && intervalMinutes > 0) {
-      final nextAlarmTime = DateTime.now().add(Duration(minutes: intervalMinutes));
-      print('[AlarmCallback] Scheduling next recurring alarm for: $nextAlarmTime');
+      // Reload SharedPreferences to get the latest state (user may have deleted)
+      await prefs.reload();
+      final stillExists = prefs.getString('alarm_$alarmId');
 
-      await AndroidAlarmManager.oneShotAt(
-        nextAlarmTime,
-        alarmId,
-        alarmCallback,
-        exact: true,
-        wakeup: true,
-        rescheduleOnReboot: true,
-        allowWhileIdle: true,
-      );
+      if (stillExists == null) {
+        print('[AlarmCallback] Alarm data was deleted, NOT rescheduling recurring alarm');
+        // Clean up any remaining active alarm data
+        await prefs.remove('active_alarm_id');
+        await prefs.remove('active_alarm_message');
+        await prefs.remove('active_alarm_timestamp');
+        await prefs.remove('active_alarm_reminder_id');
+      } else {
+        final nextAlarmTime = DateTime.now().add(Duration(minutes: intervalMinutes));
+        print('[AlarmCallback] Scheduling next recurring alarm for: $nextAlarmTime');
+
+        // Update the stored reminder data with the new scheduled time
+        final updatedReminderData = jsonEncode({
+          'id': reminderId,
+          'message': message,
+          'isRecurring': true,
+          'intervalMinutes': intervalMinutes,
+          'scheduledTimeMs': nextAlarmTime.millisecondsSinceEpoch,
+        });
+        await prefs.setString('alarm_$alarmId', updatedReminderData);
+        print('[AlarmCallback] Updated alarm data for next occurrence');
+
+        await AndroidAlarmManager.oneShotAt(
+          nextAlarmTime,
+          alarmId,
+          alarmCallback,
+          exact: true,
+          wakeup: true,
+          rescheduleOnReboot: true,
+          allowWhileIdle: true,
+        );
+      }
     }
     // Note: We don't clean up alarm data here anymore - it's cleaned up when user dismisses the alarm screen
 
@@ -657,6 +705,7 @@ class ReminderService {
     required ReminderType type,
     int? intervalMinutes,
     DateTime? scheduledTime,
+    bool? isDurationBased,
   }) async {
     try {
       // Check for existing similar reminder
@@ -669,10 +718,16 @@ class ReminderService {
 
       // Calculate next trigger time
       DateTime nextTrigger;
+      bool durationBased = isDurationBased ?? false;
+
       if (type == ReminderType.recurring && intervalMinutes != null) {
         nextTrigger = DateTime.now().add(Duration(minutes: intervalMinutes));
+        durationBased = true; // Recurring reminders are always duration-based
       } else if (scheduledTime != null) {
         nextTrigger = scheduledTime;
+        // If scheduledTime is set but isDurationBased is not explicitly provided,
+        // check if it was created with "in X minutes" pattern (duration-based)
+        // vs "at HH:MM" pattern (static time-based)
       } else {
         print('[ReminderService] Invalid reminder configuration');
         return null;
@@ -688,10 +743,11 @@ class ReminderService {
         nextTrigger: nextTrigger,
         isActive: true,
         createdAt: DateTime.now(),
+        isDurationBased: durationBased,
       );
 
       await _dbService.saveReminder(reminder);
-      print('[ReminderService] Created reminder: ${reminder.message}');
+      print('[ReminderService] Created reminder: ${reminder.message} (durationBased: $durationBased)');
 
       // Schedule the notification
       await _scheduleReminderNotification(reminder);
@@ -707,22 +763,37 @@ class ReminderService {
   /// Cancel a specific reminder
   Future<bool> cancelReminder(String reminderId) async {
     try {
-      await _dbService.deleteReminder(reminderId);
-
       final alarmId = reminderId.hashCode.abs() % 100000;
       final notificationId = _baseNotificationId + alarmId % 10000;
 
-      // Cancel the AndroidAlarmManager alarm
+      print('[ReminderService] Cancelling reminder: $reminderId (alarm: $alarmId)');
+
+      // FIRST: Cancel the AndroidAlarmManager alarm to prevent it from firing
+      // This must happen BEFORE deleting from DB to avoid race conditions
       await AndroidAlarmManager.cancel(alarmId);
+      print('[ReminderService] Cancelled AndroidAlarmManager alarm: $alarmId');
 
       // Cancel the notification
       await _notifications.cancel(notificationId);
 
-      // Clean up stored alarm data
+      // Clean up ALL alarm-related data from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('alarm_$alarmId');
 
-      print('[ReminderService] Cancelled reminder: $reminderId (alarm: $alarmId)');
+      // Also clear active alarm data if it matches this alarm
+      final activeAlarmId = prefs.getInt('active_alarm_id');
+      if (activeAlarmId == alarmId) {
+        await prefs.remove('active_alarm_id');
+        await prefs.remove('active_alarm_message');
+        await prefs.remove('active_alarm_timestamp');
+        await prefs.remove('active_alarm_reminder_id');
+        print('[ReminderService] Cleared active alarm data for: $alarmId');
+      }
+
+      // FINALLY: Delete from database
+      await _dbService.deleteReminder(reminderId);
+
+      print('[ReminderService] Successfully cancelled reminder: $reminderId');
       return true;
     } catch (e) {
       print('[ReminderService] Error cancelling reminder: $e');
@@ -750,14 +821,39 @@ class ReminderService {
   Future<bool> cancelAllReminders(String userId) async {
     try {
       final reminders = await _dbService.getActiveRemindersByUserId(userId);
+      final prefs = await SharedPreferences.getInstance();
+
+      print('[ReminderService] Cancelling ${reminders.length} reminders for user: $userId');
 
       for (final reminder in reminders) {
-        final notificationId = _baseNotificationId + reminder.id.hashCode.abs() % 10000;
+        final alarmId = reminder.id.hashCode.abs() % 100000;
+        final notificationId = _baseNotificationId + alarmId % 10000;
+
+        // Cancel AndroidAlarmManager alarm FIRST
+        await AndroidAlarmManager.cancel(alarmId);
+
+        // Cancel notification
         await _notifications.cancel(notificationId);
+
+        // Clean up alarm data from SharedPreferences
+        await prefs.remove('alarm_$alarmId');
+
+        print('[ReminderService] Cancelled reminder: ${reminder.message} (alarm: $alarmId)');
+      }
+
+      // Clear any active alarm data for this user
+      final activeAlarmReminderId = prefs.getString('active_alarm_reminder_id');
+      if (activeAlarmReminderId != null) {
+        // Check if this reminder belongs to the user (it should since we're deleting all)
+        await prefs.remove('active_alarm_id');
+        await prefs.remove('active_alarm_message');
+        await prefs.remove('active_alarm_timestamp');
+        await prefs.remove('active_alarm_reminder_id');
+        print('[ReminderService] Cleared active alarm data');
       }
 
       await _dbService.deleteAllRemindersForUser(userId);
-      print('[ReminderService] Cancelled all reminders for user: $userId');
+      print('[ReminderService] Successfully cancelled all reminders for user: $userId');
       return true;
     } catch (e) {
       print('[ReminderService] Error cancelling all reminders: $e');
@@ -778,6 +874,116 @@ class ReminderService {
   /// Update an existing reminder
   Future<bool> updateReminder(Reminder reminder) async {
     return await _dbService.updateReminder(reminder);
+  }
+
+  /// Get all reminders (active and past) for a user
+  Future<List<Reminder>> getAllRemindersWithPast(String userId) async {
+    return await _dbService.getAllRemindersByUserId(userId);
+  }
+
+  /// Get past/triggered reminders for a user
+  Future<List<Reminder>> getPastReminders(String userId) async {
+    return await _dbService.getPastRemindersByUserId(userId);
+  }
+
+  /// Mark a reminder as triggered (move to past reminders)
+  Future<bool> markReminderAsTriggered(String reminderId) async {
+    try {
+      final reminder = await _dbService.getReminderById(reminderId);
+      if (reminder == null) return false;
+
+      final triggeredReminder = reminder.copyWith(
+        isActive: false,
+        triggeredAt: DateTime.now(),
+      );
+      await _dbService.updateReminder(triggeredReminder);
+
+      // Cancel any scheduled notifications/alarms
+      final alarmId = reminderId.hashCode.abs() % 100000;
+      await _cleanupAlarmData(alarmId);
+
+      print('[ReminderService] Marked reminder as triggered: ${reminder.message}');
+      return true;
+    } catch (e) {
+      print('[ReminderService] Error marking reminder as triggered: $e');
+      return false;
+    }
+  }
+
+  /// Make a reminder recurring with specified interval
+  /// intervalMinutes: null means use the original duration (for "Yes" option)
+  Future<Reminder?> makeReminderRecurring(String reminderId, {int? intervalMinutes}) async {
+    try {
+      print('[ReminderService] makeReminderRecurring called for: $reminderId, intervalMinutes: $intervalMinutes');
+
+      final reminder = await _dbService.getReminderById(reminderId);
+      if (reminder == null) {
+        print('[ReminderService] Reminder not found: $reminderId');
+        return null;
+      }
+
+      print('[ReminderService] Found reminder: ${reminder.message}, isDurationBased: ${reminder.isDurationBased}, intervalMinutes: ${reminder.intervalMinutes}');
+      print('[ReminderService] Reminder createdAt: ${reminder.createdAt}, nextTrigger: ${reminder.nextTrigger}');
+
+      // Determine the interval:
+      // Priority order:
+      // 1. Explicitly provided intervalMinutes parameter
+      // 2. Stored intervalMinutes from the reminder (set during creation for duration-based reminders)
+      // 3. Calculate from original duration (time between creation and next trigger)
+      // 4. Default to 30 minutes
+      int interval;
+
+      if (intervalMinutes != null) {
+        // Explicit interval provided by caller
+        interval = intervalMinutes;
+        print('[ReminderService] Using provided interval: $interval minutes');
+      } else if (reminder.intervalMinutes != null && reminder.intervalMinutes! > 0) {
+        // Use stored interval from reminder (this preserves the original "in X minutes" duration)
+        interval = reminder.intervalMinutes!;
+        print('[ReminderService] Using stored interval from reminder: $interval minutes');
+      } else if (reminder.isDurationBased) {
+        // Calculate from timestamps as fallback
+        final originalDuration = reminder.nextTrigger.difference(reminder.createdAt);
+        // Use inSeconds and convert to get better precision for short durations
+        final totalSeconds = originalDuration.inSeconds;
+        interval = (totalSeconds / 60).ceil(); // Round up to ensure at least 1 minute
+        print('[ReminderService] Calculated interval from duration: $interval minutes (${totalSeconds}s)');
+        if (interval <= 0) interval = 1; // Minimum 1 minute
+      } else {
+        // Default fallback
+        interval = 30;
+        print('[ReminderService] Using default interval: $interval minutes');
+      }
+
+      final nextTrigger = DateTime.now().add(Duration(minutes: interval));
+      print('[ReminderService] Setting next trigger to: $nextTrigger (in $interval minutes)');
+
+      final recurringReminder = reminder.copyWith(
+        type: ReminderType.recurring,
+        intervalMinutes: interval,
+        isActive: true,
+        nextTrigger: nextTrigger,
+        triggeredAt: null, // Clear triggered time since it's active again
+      );
+
+      await _dbService.updateReminder(recurringReminder);
+      print('[ReminderService] Updated reminder in database');
+
+      await _scheduleReminderNotification(recurringReminder);
+      print('[ReminderService] Scheduled recurring notification');
+
+      print('[ReminderService] Made reminder recurring: ${reminder.message} (every $interval minutes, next: $nextTrigger)');
+      return recurringReminder;
+    } catch (e, stack) {
+      print('[ReminderService] Error making reminder recurring: $e');
+      print('[ReminderService] Stack trace: $stack');
+      return null;
+    }
+  }
+
+  /// Get reminder by ID
+  Future<Reminder?> getReminderById(String reminderId) async {
+    return await _dbService.getReminderById(reminderId);
   }
 
   /// Parse reminder from voice input
@@ -813,6 +1019,7 @@ class ReminderService {
         'message': _capitalizeFirst(message),
         'intervalMinutes': intervalMinutes,
         'scheduledTime': null,
+        'isDurationBased': true,
       };
     }
 
@@ -850,6 +1057,7 @@ class ReminderService {
         'message': _capitalizeFirst(message),
         'intervalMinutes': null,
         'scheduledTime': scheduledTime,
+        'isDurationBased': false, // "at HH:MM" is static time-based
       };
     }
 
@@ -879,8 +1087,9 @@ class ReminderService {
       return {
         'type': ReminderType.oneTime,
         'message': _capitalizeFirst(message),
-        'intervalMinutes': null,
+        'intervalMinutes': minutes, // Store the duration for potential recurring conversion
         'scheduledTime': scheduledTime,
+        'isDurationBased': true, // "in X minutes" is duration-based
       };
     }
 

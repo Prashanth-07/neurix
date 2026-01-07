@@ -11,7 +11,7 @@ import 'embedding_service.dart';
 class LocalDbService {
   static Database? _database;
   static const String _databaseName = 'neurix.db';
-  static const int _databaseVersion = 3; // Bumped version to add reminders table
+  static const int _databaseVersion = 4; // Bumped version to add triggered_at and is_duration_based columns
 
   // Table names
   static const String _usersTable = 'users';
@@ -88,7 +88,9 @@ class LocalDbService {
           scheduled_time TEXT,
           next_trigger TEXT NOT NULL,
           is_active INTEGER DEFAULT 1,
-          created_at TEXT NOT NULL
+          created_at TEXT NOT NULL,
+          triggered_at TEXT,
+          is_duration_based INTEGER DEFAULT 0
         )
       ''');
 
@@ -155,6 +157,18 @@ class LocalDbService {
       ''');
 
       print('Database upgraded to version 3');
+    }
+
+    if (oldVersion < 4) {
+      // Add triggered_at and is_duration_based columns for version 4
+      await db.execute('''
+        ALTER TABLE $_remindersTable ADD COLUMN triggered_at TEXT
+      ''');
+      await db.execute('''
+        ALTER TABLE $_remindersTable ADD COLUMN is_duration_based INTEGER DEFAULT 0
+      ''');
+
+      print('Database upgraded to version 4');
     }
   }
 
@@ -716,6 +730,54 @@ class LocalDbService {
       return maps.map((map) => Reminder.fromMap(map)).toList();
     } catch (e) {
       print('Error getting all active reminders: $e');
+      return [];
+    }
+  }
+
+  // Get all reminders (active and triggered/past) for a user
+  Future<List<Reminder>> getAllRemindersByUserId(String userId) async {
+    try {
+      if (kIsWeb) {
+        return [];
+      }
+
+      final db = await database;
+
+      final List<Map<String, dynamic>> maps = await db.query(
+        _remindersTable,
+        where: 'user_id = ?',
+        whereArgs: [userId],
+        orderBy: 'created_at DESC',
+      );
+
+      print('Retrieved ${maps.length} total reminders for user: $userId');
+      return maps.map((map) => Reminder.fromMap(map)).toList();
+    } catch (e) {
+      print('Error getting all reminders: $e');
+      return [];
+    }
+  }
+
+  // Get past/triggered reminders for a user
+  Future<List<Reminder>> getPastRemindersByUserId(String userId) async {
+    try {
+      if (kIsWeb) {
+        return [];
+      }
+
+      final db = await database;
+
+      final List<Map<String, dynamic>> maps = await db.query(
+        _remindersTable,
+        where: 'user_id = ? AND is_active = 0',
+        whereArgs: [userId],
+        orderBy: 'triggered_at DESC',
+      );
+
+      print('Retrieved ${maps.length} past reminders for user: $userId');
+      return maps.map((map) => Reminder.fromMap(map)).toList();
+    } catch (e) {
+      print('Error getting past reminders: $e');
       return [];
     }
   }

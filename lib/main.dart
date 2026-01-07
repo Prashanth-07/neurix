@@ -12,6 +12,7 @@ import 'services/auth_service.dart';
 import 'services/sync_service.dart';
 import 'services/voice_service.dart';
 import 'services/llm_service.dart';
+import 'services/alarm_helper_service.dart';
 import 'utils/constants.dart';
 import 'models/user_model.dart';
 import 'widgets/floating_bubble.dart';
@@ -34,7 +35,7 @@ void overlayMain() {
 }
 
 /// Handle notification tap callback
-void _onNotificationTap(NotificationResponse response) {
+void _onNotificationTap(NotificationResponse response) async {
   print('[Main] Notification tapped: ${response.payload}');
   if (response.payload != null && response.payload!.contains('|')) {
     final parts = response.payload!.split('|');
@@ -42,15 +43,19 @@ void _onNotificationTap(NotificationResponse response) {
       final alarmId = int.tryParse(parts[0]);
       final message = parts[1];
       if (alarmId != null) {
-        _navigateToAlarmScreen(alarmId, message);
+        // Get reminder ID from SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.reload();
+        final reminderId = prefs.getString('active_alarm_reminder_id');
+        _navigateToAlarmScreen(alarmId, message, reminderId);
       }
     }
   }
 }
 
 /// Navigate to alarm screen
-void _navigateToAlarmScreen(int alarmId, String message) {
-  print('[Main] Navigating to alarm screen: $alarmId, $message');
+void _navigateToAlarmScreen(int alarmId, String message, String? reminderId) {
+  print('[Main] Navigating to alarm screen: $alarmId, $message, reminderId: $reminderId');
   final navigator = navigatorKey.currentState;
   if (navigator != null) {
     navigator.push(
@@ -58,6 +63,7 @@ void _navigateToAlarmScreen(int alarmId, String message) {
         builder: (context) => AlarmScreen(
           message: message,
           alarmId: alarmId,
+          reminderId: reminderId,
         ),
       ),
     );
@@ -94,6 +100,7 @@ Future<void> _checkForActiveAlarm() async {
         await prefs.remove('active_alarm_id');
         await prefs.remove('active_alarm_message');
         await prefs.remove('active_alarm_timestamp');
+        await prefs.remove('active_alarm_reminder_id');
       }
     } else if (activeAlarmId != null || activeAlarmMessage != null) {
       // Incomplete data - clean it up
@@ -101,6 +108,7 @@ Future<void> _checkForActiveAlarm() async {
       await prefs.remove('active_alarm_id');
       await prefs.remove('active_alarm_message');
       await prefs.remove('active_alarm_timestamp');
+      await prefs.remove('active_alarm_reminder_id');
     }
   } catch (e) {
     print('[Main] Error checking for active alarm: $e');
@@ -328,17 +336,27 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
   bool _checkedPendingAlarm = false;
   bool _isShowingAlarm = false;
+  int? _lastShownAlarmTimestamp;
 
   @override
   void initState() {
     super.initState();
     // Register lifecycle observer to detect when app comes to foreground
     WidgetsBinding.instance.addObserver(this);
+
+    // Initialize the alarm helper service to receive events from native side
+    AlarmHelperService.initialize(onCheckAlarm: () {
+      print('[AuthWrapper] Native check_alarm event received');
+      // Add a small delay to allow the alarm callback to store data first
+      // The alarm callback runs in a background isolate and may take a moment
+      _checkForActiveAlarmWithRetry();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AlarmHelperService.dispose();
     super.dispose();
   }
 
@@ -353,14 +371,29 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
+  /// Check for active alarm with retry logic
+  /// This is needed because the alarm callback runs in a background isolate
+  /// and may not have stored the data yet when the native event fires
+  Future<void> _checkForActiveAlarmWithRetry() async {
+    // Try immediately first
+    final found = await _checkForActiveAlarmOnResume();
+    if (found) return;
+
+    // If not found, retry a few times with delays
+    // This handles the race condition where the native event fires before the alarm callback stores data
+    for (int i = 0; i < 5; i++) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      print('[AuthWrapper] Retry ${i + 1}/5 checking for active alarm...');
+      final foundOnRetry = await _checkForActiveAlarmOnResume();
+      if (foundOnRetry) return;
+    }
+    print('[AuthWrapper] No active alarm found after retries');
+  }
+
   /// Check for active alarm when app resumes from background
   /// This handles the case where an alarm fires while app is in background
-  Future<void> _checkForActiveAlarmOnResume() async {
-    if (_isShowingAlarm) {
-      print('[AuthWrapper] Already showing alarm, skipping check');
-      return;
-    }
-
+  /// Returns true if an alarm was found and shown
+  Future<bool> _checkForActiveAlarmOnResume() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       // Reload to get fresh data (important after background isolate writes)
@@ -369,8 +402,10 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       final activeAlarmId = prefs.getInt('active_alarm_id');
       final activeAlarmMessage = prefs.getString('active_alarm_message');
       final activeAlarmTimestamp = prefs.getInt('active_alarm_timestamp');
+      final activeAlarmReminderId = prefs.getString('active_alarm_reminder_id');
 
-      print('[AuthWrapper] Checking for active alarm on resume: id=$activeAlarmId, msg=$activeAlarmMessage, ts=$activeAlarmTimestamp');
+      print('[AuthWrapper] Checking for active alarm on resume: id=$activeAlarmId, msg=$activeAlarmMessage, ts=$activeAlarmTimestamp, reminderId=$activeAlarmReminderId');
+      print('[AuthWrapper] _isShowingAlarm=$_isShowingAlarm, _lastShownAlarmTimestamp=$_lastShownAlarmTimestamp');
 
       if (activeAlarmId != null && activeAlarmMessage != null && activeAlarmTimestamp != null) {
         // Check if the alarm was triggered recently (within last 5 minutes)
@@ -379,18 +414,40 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
         final difference = now.difference(alarmTime);
 
         if (difference.inMinutes < 5) {
+          // Check if this is a NEW alarm (different timestamp from last shown)
+          if (_lastShownAlarmTimestamp == activeAlarmTimestamp) {
+            print('[AuthWrapper] Same alarm timestamp, skipping (already shown)');
+            return true; // Return true since we found it, just already shown
+          }
+
           print('[AuthWrapper] Found recent active alarm on resume: $activeAlarmId (${difference.inSeconds}s ago)');
-          _showAlarmScreen(activeAlarmId, activeAlarmMessage);
+
+          // If already showing an alarm, the old screen should have been dismissed
+          // Reset the flag to allow showing the new alarm
+          if (_isShowingAlarm) {
+            print('[AuthWrapper] Was showing alarm, resetting flag for new alarm');
+            _isShowingAlarm = false;
+          }
+
+          // Record this alarm timestamp to avoid showing it again
+          _lastShownAlarmTimestamp = activeAlarmTimestamp;
+
+          _showAlarmScreen(activeAlarmId, activeAlarmMessage, activeAlarmReminderId);
+          return true;
         } else {
           // Alarm is too old - clean it up
           print('[AuthWrapper] Active alarm too old (${difference.inMinutes}min), cleaning up');
           await prefs.remove('active_alarm_id');
           await prefs.remove('active_alarm_message');
           await prefs.remove('active_alarm_timestamp');
+          await prefs.remove('active_alarm_reminder_id');
+          return false;
         }
       }
+      return false;
     } catch (e) {
       print('[AuthWrapper] Error checking for active alarm on resume: $e');
+      return false;
     }
   }
 
@@ -408,7 +465,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
     }
   }
 
-  void _checkAndShowPendingAlarm() {
+  void _checkAndShowPendingAlarm() async {
     if (_pendingAlarmId != null && _pendingAlarmMessage != null) {
       final alarmId = _pendingAlarmId!;
       final message = _pendingAlarmMessage!;
@@ -417,12 +474,17 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
       _pendingAlarmId = null;
       _pendingAlarmMessage = null;
 
-      print('[AuthWrapper] Showing pending alarm: $alarmId, $message');
-      _showAlarmScreen(alarmId, message);
+      // Get the reminder ID if available
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final reminderId = prefs.getString('active_alarm_reminder_id');
+
+      print('[AuthWrapper] Showing pending alarm: $alarmId, $message, reminderId: $reminderId');
+      _showAlarmScreen(alarmId, message, reminderId);
     }
   }
 
-  void _showAlarmScreen(int alarmId, String message) {
+  void _showAlarmScreen(int alarmId, String message, String? reminderId) {
     if (_isShowingAlarm) {
       print('[AuthWrapper] Already showing alarm screen, skipping');
       return;
@@ -438,6 +500,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
           builder: (context) => AlarmScreen(
             message: message,
             alarmId: alarmId,
+            reminderId: reminderId,
           ),
         ),
       ).then((_) {
@@ -453,6 +516,7 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
             builder: (context) => AlarmScreen(
               message: message,
               alarmId: alarmId,
+              reminderId: reminderId,
             ),
           ),
         ).then((_) {

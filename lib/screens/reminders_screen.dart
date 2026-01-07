@@ -14,8 +14,10 @@ class RemindersScreen extends StatefulWidget {
 
 class _RemindersScreenState extends State<RemindersScreen> {
   final ReminderService _reminderService = ReminderService();
-  List<Reminder> _reminders = [];
+  List<Reminder> _activeReminders = [];
+  List<Reminder> _pastReminders = [];
   bool _isLoading = true;
+  bool _isPastExpanded = false;
 
   @override
   void initState() {
@@ -30,10 +32,44 @@ class _RemindersScreenState extends State<RemindersScreen> {
       final authService = Provider.of<AuthService>(context, listen: false);
       final userId = authService.currentUser?.uid ?? 'anonymous';
 
-      final reminders = await _reminderService.getActiveReminders(userId);
+      // Get all reminders
+      final allReminders = await _reminderService.getAllRemindersWithPast(userId);
+
+      // Separate active and past reminders
+      final now = DateTime.now();
+      final active = <Reminder>[];
+      final past = <Reminder>[];
+
+      for (final reminder in allReminders) {
+        if (reminder.isActive) {
+          // Active reminders: recurring OR one-time in the future
+          if (reminder.type == ReminderType.recurring ||
+              reminder.nextTrigger.isAfter(now)) {
+            active.add(reminder);
+          } else {
+            // One-time reminder with time passed but still marked active
+            // Mark it as past
+            past.add(reminder);
+          }
+        } else {
+          // Inactive reminders go to past
+          past.add(reminder);
+        }
+      }
+
+      // Sort active by next trigger (soonest first)
+      active.sort((a, b) => a.nextTrigger.compareTo(b.nextTrigger));
+
+      // Sort past by triggered_at or next_trigger (most recent first)
+      past.sort((a, b) {
+        final aTime = a.triggeredAt ?? a.nextTrigger;
+        final bTime = b.triggeredAt ?? b.nextTrigger;
+        return bTime.compareTo(aTime);
+      });
 
       setState(() {
-        _reminders = reminders;
+        _activeReminders = active;
+        _pastReminders = past;
         _isLoading = false;
       });
     } catch (e) {
@@ -128,6 +164,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
         type: result['type'] as ReminderType,
         intervalMinutes: result['intervalMinutes'] as int?,
         scheduledTime: result['scheduledTime'] as DateTime?,
+        isDurationBased: result['isDurationBased'] as bool?,
       );
 
       await _loadReminders();
@@ -161,7 +198,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _reminders.isEmpty
+          : _activeReminders.isEmpty && _pastReminders.isEmpty
               ? _buildEmptyState()
               : _buildReminderList(),
     );
@@ -196,29 +233,91 @@ class _RemindersScreenState extends State<RemindersScreen> {
   Widget _buildReminderList() {
     return RefreshIndicator(
       onRefresh: _loadReminders,
-      child: ListView.builder(
+      child: ListView(
         padding: const EdgeInsets.all(AppSizes.paddingMedium),
-        itemCount: _reminders.length,
-        itemBuilder: (context, index) {
-          final reminder = _reminders[index];
-          return _buildReminderCard(reminder);
-        },
+        children: [
+          // Active reminders section
+          if (_activeReminders.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSizes.paddingSmall),
+              child: Text(
+                'Active Reminders (${_activeReminders.length})',
+                style: AppTextStyles.subheading,
+              ),
+            ),
+            ..._activeReminders.map((reminder) => _buildReminderCard(reminder, isActive: true)),
+          ],
+
+          // Empty state for active reminders
+          if (_activeReminders.isEmpty && _pastReminders.isNotEmpty) ...[
+            Card(
+              margin: const EdgeInsets.only(bottom: AppSizes.paddingMedium),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSizes.paddingLarge),
+                child: Column(
+                  children: [
+                    Icon(Icons.notifications_none, size: 40, color: Colors.grey[400]),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No active reminders',
+                      style: AppTextStyles.body.copyWith(color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          // Past reminders section (collapsible)
+          if (_pastReminders.isNotEmpty) ...[
+            const SizedBox(height: AppSizes.paddingMedium),
+            InkWell(
+              onTap: () {
+                setState(() {
+                  _isPastExpanded = !_isPastExpanded;
+                });
+              },
+              borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSizes.paddingSmall),
+                child: Row(
+                  children: [
+                    Icon(
+                      _isPastExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey[600],
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Past Reminders (${_pastReminders.length})',
+                      style: AppTextStyles.subheading.copyWith(color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_isPastExpanded) ...[
+              const SizedBox(height: AppSizes.paddingSmall),
+              ..._pastReminders.map((reminder) => _buildReminderCard(reminder, isActive: false)),
+            ],
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildReminderCard(Reminder reminder) {
+  Widget _buildReminderCard(Reminder reminder, {required bool isActive}) {
     final isRecurring = reminder.type == ReminderType.recurring;
 
     return Card(
       margin: const EdgeInsets.only(bottom: AppSizes.paddingMedium),
-      elevation: 2,
+      elevation: isActive ? 2 : 1,
+      color: isActive ? null : Colors.grey[100],
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSizes.borderRadius),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-        onTap: () => _editReminder(reminder),
+        onTap: isActive ? () => _editReminder(reminder) : null,
         child: Padding(
           padding: const EdgeInsets.all(AppSizes.paddingMedium),
           child: Row(
@@ -228,14 +327,16 @@ class _RemindersScreenState extends State<RemindersScreen> {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: isRecurring
-                      ? Colors.blue.withOpacity(0.1)
-                      : Colors.orange.withOpacity(0.1),
+                  color: isActive
+                      ? (isRecurring ? Colors.blue.withOpacity(0.1) : Colors.orange.withOpacity(0.1))
+                      : Colors.grey.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   isRecurring ? Icons.repeat : Icons.notifications_active,
-                  color: isRecurring ? Colors.blue : Colors.orange,
+                  color: isActive
+                      ? (isRecurring ? Colors.blue : Colors.orange)
+                      : Colors.grey,
                 ),
               ),
               const SizedBox(width: AppSizes.paddingMedium),
@@ -248,26 +349,36 @@ class _RemindersScreenState extends State<RemindersScreen> {
                       reminder.message,
                       style: AppTextStyles.body.copyWith(
                         fontWeight: FontWeight.w500,
+                        color: isActive ? null : Colors.grey[600],
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       reminder.formattedSchedule,
                       style: AppTextStyles.caption.copyWith(
-                        color: isRecurring ? Colors.blue : Colors.orange,
+                        color: isActive
+                            ? (isRecurring ? Colors.blue : Colors.orange)
+                            : Colors.grey,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Next: ${reminder.formattedNextTrigger}',
-                      style: AppTextStyles.caption,
+                      isActive
+                          ? 'Next: ${reminder.formattedNextTrigger}'
+                          : 'Triggered: ${_formatTriggeredTime(reminder.triggeredAt ?? reminder.nextTrigger)}',
+                      style: AppTextStyles.caption.copyWith(
+                        color: isActive ? null : Colors.grey,
+                      ),
                     ),
                   ],
                 ),
               ),
               // Delete button
               IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: isActive ? Colors.red : Colors.grey,
+                ),
                 onPressed: () => _deleteReminder(reminder),
               ),
             ],
@@ -275,6 +386,25 @@ class _RemindersScreenState extends State<RemindersScreen> {
         ),
       ),
     );
+  }
+
+  String _formatTriggeredTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+
+    if (diff.inMinutes < 1) {
+      return 'Just now';
+    } else if (diff.inHours < 1) {
+      return '${diff.inMinutes}m ago';
+    } else if (diff.inDays < 1) {
+      return '${diff.inHours}h ago';
+    } else if (diff.inDays == 1) {
+      return 'Yesterday';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}d ago';
+    } else {
+      return '${time.day}/${time.month}/${time.year}';
+    }
   }
 }
 
@@ -485,6 +615,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                 'type': _type,
                 'intervalMinutes': interval,
                 'scheduledTime': null,
+                'isDurationBased': true,
               });
             } else {
               if (_scheduledTime == null) {
@@ -513,6 +644,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                 'type': _type,
                 'intervalMinutes': null,
                 'scheduledTime': scheduledDateTime,
+                'isDurationBased': false, // Time picker is static time-based
               });
             }
           },

@@ -50,10 +50,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _speechInitialized = await _speech.initialize(
       onStatus: (status) {
         print('[HomeScreen] Speech status: $status');
-        if (status == 'done' || status == 'notListening') {
-          if (_isListening && _transcribedText.isNotEmpty) {
-            _processVoiceInput();
-          } else if (_isListening) {
+        // DON'T process on notListening - wait for finalResult in onResult
+        // This prevents processing incomplete partial results
+        if (status == 'notListening') {
+          // Speech stopped but we haven't received finalResult yet
+          // Wait longer (1.5s) for the final result to arrive
+          // This gives time for the speech recognizer to send the complete result
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (_isListening && !_hasProcessedCurrentInput && _transcribedText.isNotEmpty) {
+              // Only process if the text looks complete (doesn't end with incomplete words)
+              final text = _transcribedText.trim().toLowerCase();
+              final incompleteEndings = ['every', 'in', 'at', 'after', 'to', 'the', 'my', 'a', 'an'];
+              final lastWord = text.split(' ').last;
+
+              if (incompleteEndings.contains(lastWord)) {
+                print('[HomeScreen] Text appears incomplete (ends with "$lastWord"), waiting more...');
+                // Wait another second for completion
+                Future.delayed(const Duration(milliseconds: 1000), () {
+                  if (_isListening && !_hasProcessedCurrentInput && _transcribedText.isNotEmpty) {
+                    print('[HomeScreen] Processing after extended delay');
+                    _processVoiceInput();
+                  }
+                });
+              } else {
+                print('[HomeScreen] Processing after notListening delay (finalResult may have been missed)');
+                _processVoiceInput();
+              }
+            }
+          });
+        } else if (status == 'done') {
+          // Speech completely finished - reset UI if we haven't processed
+          if (_isListening && !_hasProcessedCurrentInput) {
             setState(() {
               _isListening = false;
               _statusText = 'Tap to speak';
@@ -438,6 +465,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         type: reminderType,
         intervalMinutes: parsed['intervalMinutes'] as int?,
         scheduledTime: parsed['scheduledTime'] as DateTime?,
+        isDurationBased: parsed['isDurationBased'] as bool?,
       );
 
       if (reminder == null) {
@@ -653,16 +681,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: AppSizes.paddingLarge),
 
-              // All Memories Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'All Memories',
-                    style: AppTextStyles.subheading,
-                  ),
-                  TextButton(
-                    onPressed: () {
+              // All Memories Card
+              FutureBuilder<List<Memory>>(
+                future: LocalDbService().getMemoriesByUserId(userId),
+                builder: (context, snapshot) {
+                  final memories = snapshot.data ?? [];
+                  final count = memories.length;
+
+                  return _buildNavigationCard(
+                    title: 'All Memories',
+                    count: count,
+                    icon: Icons.lightbulb_outline,
+                    iconColor: Colors.amber,
+                    onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -670,107 +701,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                     },
-                    child: const Text('View All'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSizes.paddingSmall),
-              FutureBuilder<List<Memory>>(
-                future: LocalDbService().getMemoriesByUserId(userId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  }
-
-                  final memories = snapshot.data ?? [];
-
-                  if (memories.isEmpty) {
-                    return Card(
-                      elevation: 1,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSizes.paddingLarge),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.memory_outlined,
-                                size: 40,
-                                color: Colors.grey[400],
-                              ),
-                              const SizedBox(height: AppSizes.paddingSmall),
-                              Text(
-                                'No memories yet',
-                                style: AppTextStyles.body.copyWith(
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Tap the mic to add your first memory',
-                                style: AppTextStyles.caption,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-
-                  // Show up to 3 recent memories
-                  final recentMemories = memories.take(3).toList();
-
-                  return Card(
-                    elevation: 1,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: recentMemories.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final memory = recentMemories[index];
-                        return ListTile(
-                          leading: const Icon(
-                            Icons.lightbulb_outline,
-                            color: Colors.amber,
-                          ),
-                          title: Text(
-                            memory.content,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            _formatDate(memory.createdAt),
-                            style: AppTextStyles.caption,
-                          ),
-                        );
-                      },
-                    ),
                   );
                 },
               ),
-              const SizedBox(height: AppSizes.paddingLarge),
+              const SizedBox(height: AppSizes.paddingMedium),
 
-              // All Reminders Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'All Reminders',
-                    style: AppTextStyles.subheading,
-                  ),
-                  TextButton(
-                    onPressed: () {
+              // All Reminders Card
+              FutureBuilder<List<Reminder>>(
+                future: LocalDbService().getActiveRemindersByUserId(userId),
+                builder: (context, snapshot) {
+                  final reminders = snapshot.data ?? [];
+                  final count = reminders.length;
+
+                  return _buildNavigationCard(
+                    title: 'All Reminders',
+                    count: count,
+                    icon: Icons.notifications_outlined,
+                    iconColor: Colors.deepPurple,
+                    onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -778,102 +726,58 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                     },
-                    child: const Text('View All'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSizes.paddingSmall),
-              FutureBuilder<List<Reminder>>(
-                future: LocalDbService().getActiveRemindersByUserId(userId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  }
-
-                  final reminders = snapshot.data ?? [];
-
-                  if (reminders.isEmpty) {
-                    return Card(
-                      elevation: 1,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSizes.paddingLarge),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.notifications_none,
-                                size: 40,
-                                color: Colors.grey[400],
-                              ),
-                              const SizedBox(height: AppSizes.paddingSmall),
-                              Text(
-                                'No reminders set',
-                                style: AppTextStyles.body.copyWith(
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Say "Remind me to..." to create one',
-                                style: AppTextStyles.caption,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-
-                  // Show up to 3 active reminders
-                  final activeReminders = reminders.take(3).toList();
-
-                  return Card(
-                    elevation: 1,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: activeReminders.length,
-                      separatorBuilder: (context, index) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final reminder = activeReminders[index];
-                        return ListTile(
-                          leading: Icon(
-                            reminder.type == ReminderType.recurring
-                                ? Icons.repeat
-                                : Icons.schedule,
-                            color: Colors.deepPurple,
-                          ),
-                          title: Text(
-                            reminder.message,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            reminder.formattedSchedule,
-                            style: AppTextStyles.caption,
-                          ),
-                          trailing: Text(
-                            reminder.formattedNextTrigger,
-                            style: AppTextStyles.caption.copyWith(
-                              color: Colors.deepPurple,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
                   );
                 },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavigationCard({
+    required String title,
+    required int count,
+    required IconData icon,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.paddingMedium),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: AppSizes.paddingMedium),
+              Expanded(
+                child: Text(
+                  '$title ($count)',
+                  style: AppTextStyles.subheading,
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: Colors.grey[400],
               ),
             ],
           ),

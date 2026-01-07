@@ -8,11 +8,13 @@ class Reminder {
   final String userId;
   final String message;
   final ReminderType type;
-  final int? intervalMinutes; // For recurring reminders
-  final DateTime? scheduledTime; // For one-time reminders
+  final int? intervalMinutes; // For recurring reminders (duration in minutes)
+  final DateTime? scheduledTime; // For one-time reminders (static time)
   final DateTime nextTrigger;
   final bool isActive;
   final DateTime createdAt;
+  final DateTime? triggeredAt; // When the reminder was last triggered
+  final bool isDurationBased; // true if created with duration (e.g., "in 30 minutes")
 
   Reminder({
     required this.id,
@@ -24,7 +26,27 @@ class Reminder {
     required this.nextTrigger,
     this.isActive = true,
     required this.createdAt,
+    this.triggeredAt,
+    this.isDurationBased = false,
   });
+
+  /// Check if this is a past/triggered reminder that should go in the dropdown
+  bool get isPastReminder {
+    // If it's inactive and was triggered, it's a past reminder
+    if (!isActive && triggeredAt != null) return true;
+    // If it's a one-time reminder and the time has passed
+    if (type == ReminderType.oneTime && !isActive) return true;
+    return false;
+  }
+
+  /// Check if this is an active/upcoming reminder
+  bool get isUpcomingReminder {
+    // Recurring reminders are always upcoming (unless manually deactivated)
+    if (type == ReminderType.recurring && isActive) return true;
+    // One-time reminders are upcoming if active and next trigger is in the future
+    if (type == ReminderType.oneTime && isActive && nextTrigger.isAfter(DateTime.now())) return true;
+    return false;
+  }
 
   factory Reminder.fromMap(Map<String, dynamic> map) {
     return Reminder(
@@ -39,6 +61,10 @@ class Reminder {
       nextTrigger: DateTime.parse(map['next_trigger'] ?? DateTime.now().toIso8601String()),
       isActive: map['is_active'] == 1 || map['is_active'] == true,
       createdAt: DateTime.parse(map['created_at'] ?? DateTime.now().toIso8601String()),
+      triggeredAt: map['triggered_at'] != null
+          ? DateTime.parse(map['triggered_at'])
+          : null,
+      isDurationBased: map['is_duration_based'] == 1 || map['is_duration_based'] == true,
     );
   }
 
@@ -53,6 +79,8 @@ class Reminder {
       'next_trigger': nextTrigger.toIso8601String(),
       'is_active': isActive ? 1 : 0,
       'created_at': createdAt.toIso8601String(),
+      'triggered_at': triggeredAt?.toIso8601String(),
+      'is_duration_based': isDurationBased ? 1 : 0,
     };
   }
 
@@ -66,6 +94,8 @@ class Reminder {
     DateTime? nextTrigger,
     bool? isActive,
     DateTime? createdAt,
+    DateTime? triggeredAt,
+    bool? isDurationBased,
   }) {
     return Reminder(
       id: id ?? this.id,
@@ -77,6 +107,8 @@ class Reminder {
       nextTrigger: nextTrigger ?? this.nextTrigger,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
+      triggeredAt: triggeredAt ?? this.triggeredAt,
+      isDurationBased: isDurationBased ?? this.isDurationBased,
     );
   }
 

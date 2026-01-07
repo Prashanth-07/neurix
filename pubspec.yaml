@@ -82,6 +82,9 @@ dependencies:
   # Show app over lock screen for alarms
   flutter_show_when_locked: ^1.0.0
 
+  # Android intents for wake-up broadcasts
+  android_intent_plus: ^5.1.0
+
   # Background Service for voice recording (disabled for now)
   # flutter_background_service: ^5.0.10
   # flutter_background_service_android: ^6.2.7

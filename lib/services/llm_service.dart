@@ -383,13 +383,19 @@ JSON format:
 {"type":"oneTime|recurring","message":"Task","timeType":"duration|static|null","timeValue":"string|null","intervalMinutes":number|null}
 
 Rules:
-- "every X min/hour" → type=recurring, intervalMinutes=X (convert hours to minutes)
+- "every X minutes" → type=recurring, intervalMinutes=X (keep as minutes!)
+- "every X hours" → type=recurring, intervalMinutes=X*60 (convert hours to minutes)
 - "in/after X min/hour" → type=oneTime, timeType=duration, timeValue="X minutes" or "X hours"
 - "at X PM/AM" or "at X o'clock" → type=oneTime, timeType=static, timeValue="X PM" or "X AM"
 - message = just the task (capitalized), no time words
+- IMPORTANT: Pay attention to "minutes" vs "hours" - they are different units!
 
 Examples:
+"remind me to drink water every 1 minute" → {"type":"recurring","message":"Drink water","timeType":null,"timeValue":null,"intervalMinutes":1}
+"remind me to drink water every 2 minutes" → {"type":"recurring","message":"Drink water","timeType":null,"timeValue":null,"intervalMinutes":2}
+"remind me to drink water every 5 minutes" → {"type":"recurring","message":"Drink water","timeType":null,"timeValue":null,"intervalMinutes":5}
 "remind me to drink water every 30 minutes" → {"type":"recurring","message":"Drink water","timeType":null,"timeValue":null,"intervalMinutes":30}
+"remind me to drink water every 1 hour" → {"type":"recurring","message":"Drink water","timeType":null,"timeValue":null,"intervalMinutes":60}
 "remind me to drink water every 2 hours" → {"type":"recurring","message":"Drink water","timeType":null,"timeValue":null,"intervalMinutes":120}
 "remind me to call mom in 5 minutes" → {"type":"oneTime","message":"Call mom","timeType":"duration","timeValue":"5 minutes","intervalMinutes":null}
 "remind me to call mom after 2 hours" → {"type":"oneTime","message":"Call mom","timeType":"duration","timeValue":"2 hours","intervalMinutes":null}
@@ -422,6 +428,16 @@ Return ONLY JSON, no extra text.''';
         return null;
       }
 
+      // Post-processing: Validate and fix intervalMinutes for recurring reminders
+      // This catches LLM errors like interpreting "2 minutes" as 120 (2 hours)
+      if (parsed['type'] == 'recurring' && parsed['intervalMinutes'] != null) {
+        int? correctedInterval = _validateAndCorrectInterval(userInput, parsed['intervalMinutes'] as int);
+        if (correctedInterval != null && correctedInterval != parsed['intervalMinutes']) {
+          print('[LLM-3] Corrected intervalMinutes from ${parsed['intervalMinutes']} to $correctedInterval');
+          parsed['intervalMinutes'] = correctedInterval;
+        }
+      }
+
       // Calculate scheduledTime based on timeType and timeValue
       if (parsed['type'] == 'oneTime') {
         DateTime? scheduledTime = _calculateScheduledTime(
@@ -430,17 +446,35 @@ Return ONLY JSON, no extra text.''';
         );
         parsed['scheduledTime'] = scheduledTime;
         print('[LLM-3] Calculated scheduledTime: $scheduledTime');
+
+        // Set isDurationBased based on timeType
+        // "duration" means "in X minutes" -> duration-based
+        // "static" means "at X PM" -> static time-based
+        parsed['isDurationBased'] = parsed['timeType'] == 'duration';
+        print('[LLM-3] isDurationBased: ${parsed['isDurationBased']}');
+
+        // For duration-based one-time reminders, store the duration in intervalMinutes
+        // This is needed when converting to recurring later
+        if (parsed['isDurationBased'] == true && parsed['timeValue'] != null) {
+          int? durationMinutes = _extractDurationMinutes(parsed['timeValue'] as String);
+          if (durationMinutes != null && durationMinutes > 0) {
+            parsed['intervalMinutes'] = durationMinutes;
+            print('[LLM-3] Stored duration for potential recurring: $durationMinutes minutes');
+          }
+        }
       }
 
       // Ensure proper defaults
       if (parsed['type'] == 'oneTime' && parsed['scheduledTime'] == null) {
         parsed['scheduledTime'] = DateTime.now().add(const Duration(minutes: 5));
+        parsed['isDurationBased'] = true; // Default is duration-based
         print('[LLM-3] Using default 5 minutes from now');
       } else if (parsed['type'] == 'recurring') {
         if (parsed['intervalMinutes'] == null || parsed['intervalMinutes'] == 0) {
           parsed['intervalMinutes'] = 30;
           print('[LLM-3] Using default interval of 30 minutes');
         }
+        parsed['isDurationBased'] = true; // Recurring reminders are always duration-based
       }
 
       return parsed;
@@ -449,6 +483,37 @@ Return ONLY JSON, no extra text.''';
       print('[LLM-3] Error: $e');
       return null;
     }
+  }
+
+  /// Validate and correct intervalMinutes based on the original user input
+  /// This catches LLM errors like interpreting "2 minutes" as 120 (2 hours)
+  int? _validateAndCorrectInterval(String userInput, int llmInterval) {
+    final lowerInput = userInput.toLowerCase();
+
+    // Extract the number from the input (e.g., "every 2 minutes" -> 2)
+    final everyMatch = RegExp(r'every\s+(\d+)\s*(minutes?|mins?|hours?|hrs?)').firstMatch(lowerInput);
+    if (everyMatch == null) {
+      return null; // Can't validate, trust LLM
+    }
+
+    final number = int.parse(everyMatch.group(1)!);
+    final unit = everyMatch.group(2)!;
+
+    // Calculate expected interval based on user input
+    int expectedInterval;
+    if (unit.startsWith('hour') || unit.startsWith('hr')) {
+      expectedInterval = number * 60; // Convert hours to minutes
+    } else {
+      expectedInterval = number; // Already in minutes
+    }
+
+    // If LLM interval doesn't match expected, return the corrected value
+    if (llmInterval != expectedInterval) {
+      print('[LLM-3] LLM misinterpreted interval: got $llmInterval, expected $expectedInterval');
+      return expectedInterval;
+    }
+
+    return null; // No correction needed
   }
 
   /// Calculate the actual scheduled DateTime from timeType and timeValue
@@ -470,6 +535,33 @@ Return ONLY JSON, no extra text.''';
     }
 
     return null;
+  }
+
+  /// Extract duration in minutes from a duration string
+  /// Handles: "5 minutes", "2 hours", "30 min", "1 hour"
+  /// Returns the duration in minutes, or null if parsing fails
+  int? _extractDurationMinutes(String timeValue) {
+    final lowerValue = timeValue.toLowerCase().trim();
+
+    // Extract number from string
+    final numberMatch = RegExp(r'(\d+)').firstMatch(lowerValue);
+    if (numberMatch == null) {
+      return null;
+    }
+    final number = int.parse(numberMatch.group(1)!);
+
+    // Determine unit and convert to minutes
+    if (lowerValue.contains('hour')) {
+      return number * 60;
+    } else if (lowerValue.contains('min')) {
+      return number;
+    } else if (lowerValue.contains('second')) {
+      // Convert seconds to minutes, minimum 1 minute
+      return (number / 60).ceil().clamp(1, 999999);
+    }
+
+    // Default to minutes if no unit specified
+    return number;
   }
 
   /// Parse duration string and add to current time

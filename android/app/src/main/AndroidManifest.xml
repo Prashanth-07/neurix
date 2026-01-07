@@ -71,6 +71,15 @@
             tools:replace="android:exported" />
         -->
 
+        <!-- Custom alarm receiver for waking up device -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.bunny.neuro.WAKE_UP_ALARM"/>
+            </intent-filter>
+        </receiver>
+
         <!-- Alarm Manager service for background reminders -->
         <service
             android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"
