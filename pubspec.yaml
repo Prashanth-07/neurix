@@ -85,6 +85,9 @@ dependencies:
   # Android intents for wake-up broadcasts
   android_intent_plus: ^5.1.0
 
+  # ONNX Runtime for on-device ML inference (better transformer support)
+  onnxruntime: ^1.4.1
+
   # Background Service for voice recording (disabled for now)
   # flutter_background_service: ^5.0.10
   # flutter_background_service_android: ^6.2.7
@@ -115,6 +118,7 @@ flutter:
   assets:
     - .env
     - assets/sounds/
+    - assets/models/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

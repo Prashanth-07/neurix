@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/memory_model.dart';
+import 'intent_classifier_service.dart';
 
 enum LLMStatus {
   uninitialized,
@@ -37,7 +38,10 @@ class LLMService {
 
   // HTTP client for API calls
   late http.Client _httpClient;
-  
+
+  // On-device intent classifier
+  final IntentClassifierService _intentClassifier = IntentClassifierService();
+
   Future<void> initialize() async {
     // Skip if already ready
     if (_status == LLMStatus.ready) {
@@ -52,6 +56,11 @@ class LLMService {
       // Initialize HTTP client
       _httpClient = http.Client();
 
+      // Initialize on-device intent classifier (TFLite)
+      print('Initializing on-device intent classifier...');
+      await _intentClassifier.initialize();
+      print('On-device intent classifier ready');
+
       // Test API connectivity
       bool apiReady = await _testGroqConnection();
 
@@ -59,9 +68,9 @@ class LLMService {
         _updateStatus(LLMStatus.ready);
         print('LLM Service initialized successfully with Groq API ($_modelName)');
       } else {
-        _updateStatus(LLMStatus.error);
-        print('Failed to connect to Groq API');
-        throw Exception('Groq API connection failed');
+        // API not available, but intent classifier is still usable
+        _updateStatus(LLMStatus.ready);
+        print('Groq API not available, but on-device intent classifier is ready');
       }
 
     } catch (e) {
@@ -165,58 +174,41 @@ $memoryContext''';
   }
 
   /// ===========================================
-  /// LLM CALL 1: INTENT DETECTION
+  /// INTENT DETECTION (On-Device TFLite)
   /// ===========================================
-  /// Detects user intent from voice input
+  /// Detects user intent from voice input using on-device MobileBERT model
   /// Returns: 'save', 'search', 'reminder', 'cancel_reminder', or 'unclear'
   Future<String> detectIntent(String userInput) async {
-    print('[LLM-1] detectIntent() - Input: "$userInput"');
+    print('[Intent] detectIntent() - Input: "$userInput"');
 
     try {
-      if (_status != LLMStatus.ready) {
-        print('[LLM-1] Not ready, initializing...');
-        await initialize();
-      }
+      // Use on-device TFLite model for intent detection
+      final result = await _intentClassifier.classifyIntent(userInput);
+      print('[Intent] TFLite result: ${result.intent} (confidence: ${result.confidence})');
 
-      String systemPrompt = '''Classify user input into ONE intent. Reply with ONLY one word.
-
-Intents:
-- save: User states information to remember (locations, facts, passwords, events)
-- search: User asks a question or wants to find saved information
-- reminder: User wants to set a new reminder (contains "remind me", "set reminder", time phrases)
-- cancel_reminder: User wants to stop/cancel/delete a reminder
-- unclear: Input is too vague or doesn't fit any category
-
-Reply with exactly one word: save, search, reminder, cancel_reminder, or unclear''';
-
-      String userMessage = userInput;
-
-      print('[LLM-1] Calling Groq API...');
-      String response = await _callGroqAPI(systemPrompt, userMessage);
-      String intent = response.toLowerCase().trim();
-
-      // Extract intent word from response
-      if (intent.contains('cancel_reminder') || intent.contains('cancel reminder')) {
+      // Map cancel_all and cancel_specific to cancel_reminder for backward compatibility
+      String intent = result.intent;
+      if (intent == 'cancel_all' || intent == 'cancel_specific') {
         intent = 'cancel_reminder';
-      } else if (intent.contains('save')) {
-        intent = 'save';
-      } else if (intent.contains('search')) {
-        intent = 'search';
-      } else if (intent.contains('reminder')) {
-        intent = 'reminder';
-      } else if (intent.contains('unclear')) {
-        intent = 'unclear';
-      } else {
-        print('[LLM-1] Unexpected response: "$response", using fallback');
-        return _detectIntentFallback(userInput);
       }
 
-      print('[LLM-1] Detected intent: "$intent"');
+      print('[Intent] Final intent: "$intent"');
       return intent;
 
     } catch (e) {
-      print('[LLM-1] Error: $e, using fallback');
+      print('[Intent] Error: $e, using fallback');
       return _detectIntentFallback(userInput);
+    }
+  }
+
+  /// Get the detailed cancel type from intent classifier
+  /// Returns: 'all' for cancel_all, topic keyword for cancel_specific, null otherwise
+  Future<String?> getCancelType(String userInput) async {
+    try {
+      return await _intentClassifier.getCancelType(userInput);
+    } catch (e) {
+      print('[Intent] getCancelType error: $e');
+      return null;
     }
   }
 
@@ -311,58 +303,21 @@ Reply with exactly one word: save, search, reminder, cancel_reminder, or unclear
   /// ===========================================
 
   /// ===========================================
-  /// LLM CALL 4: CANCEL REMINDER PARSING
+  /// CANCEL REMINDER PARSING (On-Device)
   /// ===========================================
-  /// Parses which reminder to cancel from user input
+  /// Parses which reminder to cancel from user input using on-device model
   /// Returns: 'all' for all reminders, or the reminder keyword to search
   Future<String?> parseCancelReminderRequest(String userInput) async {
-    print('[LLM-4] parseCancelReminderRequest() - Input: "$userInput"');
+    print('[Cancel] parseCancelReminderRequest() - Input: "$userInput"');
 
     try {
-      if (_status != LLMStatus.ready) {
-        print('[LLM-4] Not ready, initializing...');
-        await initialize();
-      }
-
-      String systemPrompt = '''Extract which reminder to cancel from user input.
-
-Rules:
-- If user wants to cancel ALL reminders, return exactly: all
-- If user wants to cancel a SPECIFIC reminder, return just the keyword (e.g., "water", "medicine", "call mom")
-- Extract the main subject/task word from the request
-
-Examples:
-"delete all reminders" → all
-"cancel all my reminders" → all
-"stop all reminders" → all
-"remove every reminder" → all
-"cancel my water reminder" → water
-"delete the medicine reminder" → medicine
-"stop reminding me to drink water" → water
-"remove the call mom reminder" → call mom
-"I don't want the exercise reminder anymore" → exercise
-
-Return ONLY the keyword or "all", nothing else.''';
-
-      String userMessage = userInput;
-
-      print('[LLM-4] Calling Groq API...');
-      String response = await _callGroqAPI(systemPrompt, userMessage);
-      String result = response.toLowerCase().trim();
-
-      // Clean up response
-      result = result.replaceAll('"', '').replaceAll("'", '').trim();
-
-      print('[LLM-4] Result: "$result"');
-
-      if (result.isEmpty) {
-        return null;
-      }
-
-      return result;
+      // Use on-device classifier to determine cancel type
+      final cancelType = await getCancelType(userInput);
+      print('[Cancel] Result: "$cancelType"');
+      return cancelType;
 
     } catch (e) {
-      print('[LLM-4] Error: $e');
+      print('[Cancel] Error: $e');
       return null;
     }
   }
@@ -742,5 +697,6 @@ Return ONLY JSON, no extra text.''';
   void dispose() {
     _httpClient.close();
     _statusController.close();
+    _intentClassifier.dispose();
   }
 }

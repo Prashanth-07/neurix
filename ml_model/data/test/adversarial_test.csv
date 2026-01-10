@@ -1,0 +1,300 @@
+text,label
+keys in drawer,save
+wallet on table,save
+phone in my bag,save
+parked in lot b,save
+netflix password is 1234,save
+wifi code is secret123,save
+mom birthday march 5,save
+i owe john 500 rupees,save
+glasses in bedroom,save
+charger is in the drawer,save
+laptop on my desk,save
+passport in the safe,save
+car keys on the hook,save
+umbrella in the closet,save
+medicine in cabinet,save
+headphones in backpack,save
+remote on the couch,save
+credit card in wallet,save
+bike keys in jacket pocket,save
+watch on nightstand,save
+camera in the bag,save
+tablet charging in bedroom,save
+sunglasses in car,save
+documents in office drawer,save
+water bottle on kitchen counter,save
+id card in my purse,save
+power bank in front pocket,save
+book on the shelf,save
+notebook in my desk,save
+mouse next to keyboard,save
+gmail password qwerty,save
+atm pin is 4321,save
+office wifi password admin123,save
+spotify login test1234,save
+bank pin 5678,save
+john owes me 1000,save
+borrowed charger from mike,save
+lent 500 to sarah,save
+meeting at 3pm tomorrow,save
+flight on monday 9am,save
+interview scheduled friday,save
+dentist appointment tuesday,save
+rent due on 15th,save
+mom phone number 9876543210,save
+dad birthday june 12,save
+sister anniversary april 5,save
+boss meeting wednesday,save
+project deadline next week,save
+exam on 20th,save
+class at 10am,save
+where are my keys,search
+where is my wallet,search
+where did i put my phone,search
+where is the laptop,search
+find my glasses,search
+where did i leave my charger,search
+what is my netflix password,search
+what is the wifi password,search
+where are my headphones,search
+find my umbrella,search
+where is my passport,search
+what is gmail password,search
+where did i keep my watch,search
+search for my car keys,search
+locate my tablet,search
+where is the remote,search
+what is the atm pin,search
+where is my credit card,search
+find my medicine,search
+where did i put my book,search
+what is mom phone number,search
+when is dad birthday,search
+what time is meeting,search
+when is the flight,search
+do i have any appointments,search
+what did i save about keys,search
+where is my id card,search
+show me wallet location,search
+tell me wifi password,search
+what is the bank pin,search
+does john owe me money,search
+when is the deadline,search
+what time is class,search
+where is my power bank,search
+find my notebook,search
+where are my documents,search
+what is office wifi password,search
+when is sister anniversary,search
+where did i park,search
+search my sunglasses,search
+where is camera,search
+recall where i put mouse,search
+any info on charger,search
+help me find backpack,search
+look for my jacket,search
+get my keys location,search
+what about my purse,search
+tell me about my bike keys,search
+show me where umbrella is,search
+remind me to drink water,reminder
+remind me to take medicine,reminder
+set reminder for gym,reminder
+alarm at 7am,reminder
+remind me to call mom,reminder
+wake me up at 6am,reminder
+reminder to pay bills,reminder
+remind me in 10 minutes,reminder
+set alarm for 5pm,reminder
+remind me to exercise,reminder
+alert me at noon,reminder
+remind me to eat lunch,reminder
+reminder for meeting at 3,reminder
+remind me every hour to stretch,reminder
+set reminder to buy groceries,reminder
+remind me to charge phone,reminder
+alarm for tomorrow 8am,reminder
+remind me to take vitamins,reminder
+notification at 9pm,reminder
+remind me to water plants,reminder
+ping me in 30 minutes,reminder
+remind me to feed pet,reminder
+reminder to do laundry,reminder
+alert me to check email,reminder
+remind me to study,reminder
+buzz me at 4pm,reminder
+remind me to meditate,reminder
+set alarm to wake up,reminder
+remind me to read,reminder
+reminder for yoga at 6,reminder
+remind me to clean room,reminder
+alert for dinner at 7pm,reminder
+remind me to take break,reminder
+reminder to walk around,reminder
+remind me to attend meeting,reminder
+set notification for call,reminder
+remind me about interview,reminder
+alarm for flight,reminder
+remind me to pack,reminder
+notification to leave,reminder
+remind me every 2 hours,reminder
+recurring reminder for water,reminder
+daily reminder for medicine,reminder
+hourly alert to stand,reminder
+remind me later to call,reminder
+set timer for 15 minutes,reminder
+remind me tonight,reminder
+morning alarm 5am,reminder
+evening reminder 8pm,reminder
+remind me this afternoon,reminder
+cancel all reminders,cancel_all
+delete all reminders,cancel_all
+remove all reminders,cancel_all
+stop all reminders,cancel_all
+clear all reminders,cancel_all
+turn off all reminders,cancel_all
+delete everything,cancel_all
+cancel every reminder,cancel_all
+remove all alarms,cancel_all
+stop all alarms,cancel_all
+clear all notifications,cancel_all
+delete all alerts,cancel_all
+cancel all of them,cancel_all
+remove every reminder,cancel_all
+stop every alarm,cancel_all
+get rid of all reminders,cancel_all
+wipe all reminders,cancel_all
+erase all reminders,cancel_all
+kill all alarms,cancel_all
+end all reminders,cancel_all
+i want all reminders gone,cancel_all
+no more reminders at all,cancel_all
+delete all my reminders,cancel_all
+remove all my alarms,cancel_all
+cancel all my notifications,cancel_all
+stop all active reminders,cancel_all
+clear all scheduled reminders,cancel_all
+delete all pending reminders,cancel_all
+remove every single reminder,cancel_all
+cancel all recurring reminders,cancel_all
+turn off every reminder,cancel_all
+disable all reminders,cancel_all
+deactivate all alarms,cancel_all
+remove all the reminders,cancel_all
+delete all the alarms,cancel_all
+cancel everything please,cancel_all
+stop all of them now,cancel_all
+clear every reminder,cancel_all
+wipe all alarms,cancel_all
+get rid of every reminder,cancel_all
+i want to cancel all,cancel_all
+please delete all reminders,cancel_all
+can you remove all alarms,cancel_all
+just cancel all of them,cancel_all
+turn off all notifications,cancel_all
+stop all alerts please,cancel_all
+remove all set reminders,cancel_all
+delete all existing alarms,cancel_all
+cancel all current reminders,cancel_all
+clear all active alerts,cancel_all
+cancel water reminder,cancel_specific
+delete medicine reminder,cancel_specific
+remove gym reminder,cancel_specific
+stop the water reminder,cancel_specific
+cancel my medicine alarm,cancel_specific
+delete the gym alert,cancel_specific
+remove call mom reminder,cancel_specific
+stop exercise reminder,cancel_specific
+cancel the 7am alarm,cancel_specific
+delete morning reminder,cancel_specific
+remove lunch reminder,cancel_specific
+stop the meeting alert,cancel_specific
+cancel bill payment reminder,cancel_specific
+delete stretch reminder,cancel_specific
+remove the hourly alert,cancel_specific
+stop water notification,cancel_specific
+cancel my wake up alarm,cancel_specific
+delete evening reminder,cancel_specific
+remove the 5pm alarm,cancel_specific
+stop medicine notification,cancel_specific
+cancel yoga reminder,cancel_specific
+delete the walk reminder,cancel_specific
+remove meditation alert,cancel_specific
+stop reading reminder,cancel_specific
+cancel email reminder,cancel_specific
+delete study alarm,cancel_specific
+remove laundry reminder,cancel_specific
+stop grocery reminder,cancel_specific
+cancel vitamins alert,cancel_specific
+delete plant watering reminder,cancel_specific
+remove pet feeding alarm,cancel_specific
+stop phone charging reminder,cancel_specific
+cancel dinner alert,cancel_specific
+delete break reminder,cancel_specific
+remove the noon alarm,cancel_specific
+stop afternoon reminder,cancel_specific
+cancel tonight reminder,cancel_specific
+delete daily reminder,cancel_specific
+remove recurring water alert,cancel_specific
+stop hourly stretch reminder,cancel_specific
+cancel the 3pm meeting reminder,cancel_specific
+delete interview reminder,cancel_specific
+remove flight alarm,cancel_specific
+stop packing reminder,cancel_specific
+cancel leave notification,cancel_specific
+turn off water reminder,cancel_specific
+disable gym alarm,cancel_specific
+deactivate medicine alert,cancel_specific
+no more water reminders,cancel_specific
+stop reminding about gym,cancel_specific
+hi,unclear
+hello,unclear
+hey,unclear
+thanks,unclear
+thank you,unclear
+ok,unclear
+okay,unclear
+sure,unclear
+yes,unclear
+no,unclear
+maybe,unclear
+hmm,unclear
+uh,unclear
+um,unclear
+idk,unclear
+nvm,unclear
+k,unclear
+kk,unclear
+lol,unclear
+cool,unclear
+nice,unclear
+great,unclear
+fine,unclear
+alright,unclear
+got it,unclear
+i see,unclear
+whatever,unclear
+nothing,unclear
+forget it,unclear
+never mind,unclear
+keys,unclear
+wallet,unclear
+phone,unclear
+water,unclear
+medicine,unclear
+gym,unclear
+alarm,unclear
+reminder,unclear
+password,unclear
+meeting,unclear
+put it somewhere,unclear
+saved it,unclear
+left it,unclear
+that thing,unclear
+the item,unclear
+something,unclear
+somewhere,unclear
+do it,unclear
+help,unclear
+what can you do,unclear

@@ -1,0 +1,1326 @@
+text,label
+Set alarm for 9am,reminder
+Where's my keys?,search
+good evening.,unclear
+Remind me to stretch after 45 minutes,reminder
+What is friend's birthday?,search
+take a break in 3 hrs,reminder
+My debit card is in the cabinet,save
+no need for morning reminder,cancel_specific
+Don't let me forget to do laundry,reminder
+stop my lunch reminder,cancel_specific
+I no longer need the sleep reminder,cancel_specific
+Just cancel all the reminders immediately,cancel_all
+i want to clear all scheduled reminders immediately,cancel_all
+In 45 mins remind me to take medicine,reminder
+Please cancel every reminder,cancel_all
+Do you know where my power bank is?,search
+Could you cancel all my reminders,cancel_all
+Quickly i want to stop all my reminders right now,cancel_all
+Note that meeting is next week,save
+I no longer need the lunch reminder,cancel_specific
+can you cancel the rent reminder,cancel_specific
+remove the gym reminder,cancel_specific
+My GPay password is qwerty,save
+I WANT TO TURN OFF ALL NOTIFICATIONS FOR ME,cancel_all
+Remind me to do laundry at 8am,reminder
+My jacket is in the pocket,save
+Where are my tablet?,search
+do laundry in 60 minute,reminder
+brb!,unclear
+please clear all reminders now,cancel_all
+Kk?,unclear
+What was the office WiFi password?,search
+hmm.,unclear
+re?,unclear
+Help me find my iPad,search
+Remind me to take a break at 10am,reminder
+Remember that appointment is on Monday,save
+Reminder at 6am to attend meeting,reminder
+take a break in 1 hrs,reminder
+Don't forget class is at 10am,save
+Can you find my watch?,search
+Do you have info about keyboard?,search
+Please please turn off all reminders for me,cancel_all
+stop my call reminder,cancel_specific
+Remind me at 12pm to charge phone,reminder
+phone PIN is 0000,save
+I have put my water bottle in the desk,save
+Search for my debit card,search
+Remind me to take medicine please,reminder
+My email password is letmein,save
+stop the email reminder,cancel_specific
+Like?!,unclear
+stop the study reminder,cancel_specific
+Hmm okay.,unclear
+Hmmmm!,unclear
+Do I owe Sarah money?,search
+don't remind me about posture anymore,cancel_specific
+PIN for locker is 1234,save
+Every 3 hr remind me to do laundry,reminder
+don't remind me about lunch anymore,cancel_specific
+What's my Instagram password?,search
+Don't let me forget to stretch,reminder
+Remind me to wake up at 2pm,reminder
+My locker PIN is 7890,save
+YEAH?!,unclear
+Search for tablet,search
+I stored my ID card in the drawer,save
+cancel my exercise reminder,cancel_specific
+No!,unclear
+I kept my wallet in the hook,save
+aaa?,unclear
+can you cancel the gym reminder,cancel_specific
+Can you can you clear all reminders,cancel_all
+CAN YOU REMOVE EVERYTHING,cancel_all
+can you i want to remove all my reminders now,cancel_all
+Please cancel every single reminder right now,cancel_all
+cancel the posture reminder,cancel_specific
+My dad's phone number is 00006098,save
+sister's number is 98768903,save
+Show me my home WiFi password,search
+can you cancel the morning reminder,cancel_specific
+What is mom's address?,search
+I kept my phone in the cabinet,save
+doctor's phone number is 98763361,save
+I left my keys on the front pocket,save
+alright?,unclear
+water bottle is in the counter,save
+don't remind me about meditation anymore,cancel_specific
+i need to delete everything immediately,cancel_all
+Find the laptop,search
+like?!,unclear
+I WANT TO DELETE ALL THE REMINDERS,cancel_all
+power bank is in the cupboard,save
+can you cancel the lunch reminder,cancel_specific
+Can you find my laptop?,search
+please delete hydration reminder,cancel_specific
+I lent 500 to John,save
+ZZZ?,unclear
+i want to please turn off all my reminders immediately,cancel_all
+could you stop all active reminders please,cancel_all
+My colleague's phone number is 24686472,save
+Please find my mouse,search
+Remind me to stretch in 60 minute,reminder
+can you remove the water reminder,cancel_specific
+UH HUH!,unclear
+Have I saved anything about iPad?,search
+Do you have info about water bottle?,search
+Help me find my car keys,search
+Do I have debit card?,search
+home WiFi PIN is 4321,save
+Could you i want to clear all reminders please,cancel_all
+i want to turn off every reminder for me,cancel_all
+Tell me where my keyboard is,search
+I want to cancel all reminders please,cancel_all
+Could you cancel all alerts please,cancel_all
+What is my home WiFi password?,search
+remove that dinner reminder,cancel_specific
+Tell me my ATM password,search
+Remind me every 60 minute to go to gym,reminder
+Recurring reminder every 15 hr to sleep,reminder
+I NEED TO JUST TURN OFF ALL MY REMINDERS PLEASE,cancel_all
+to.,unclear
+a!,unclear
+just can you turn off all my reminders now,cancel_all
+Get,unclear
+I have put my sunglasses in the box,save
+can you stop the grocery reminder,cancel_specific
+Remind me to take medicine after 10 hrs,reminder
+My Amazon PIN is 5555,save
+uhh.,unclear
+I owe dad 100 rupees,save
+What's the GPay password?,search
+walk around in 3 mins,reminder
+Locate my book,search
+My doctor's number is 00002564,save
+I have put my glasses in the lot B,save
+Please i want to cancel all reminders for me,cancel_all
+Do you have info about charger?,search
+I borrowed 100 from John,save
+stop reminding me about medicine,cancel_specific
+please just cancel all my reminders now,cancel_all
+Where did I place my wallet?,search
+I parked my backpack in safe,save
+I'd like to delete the stretch reminder,cancel_specific
+disable daily reminder,cancel_specific
+HMM OKAY?,unclear
+IDK,unclear
+I don't need the meeting reminder,cancel_specific
+Repeat reminder to exercise every 15 hrs,reminder
+delete my bills reminder,cancel_specific
+re!,unclear
+clean room at 12pm,reminder
+My boss's anniversary is 78907445,save
+My address is 55555080,save
+Am I supposed to call mom?,search
+I put my water bottle in the wardrobe,save
+Reminder at 3pm to attend meeting,reminder
+Search documents,search
+Remind me every 1 minute to walk around,reminder
+Get my tablet location,search
+delete the medicine reminder,cancel_specific
+I want to remove the sleep reminder,cancel_specific
+Do you have info about phone?,search
+Find my power bank,search
+MEH,unclear
+PLEASE TURN OFF ALL THE REMINDERS,cancel_all
+I put my power bank in the safe,save
+Where did I place my charger?,search
+Please find my headphones,search
+stop reminding me about evening,cancel_specific
+Find where I put my documents,search
+buy groceries after 5 minute,reminder
+remove my reading reminder,cancel_specific
+Remind me to water the plants every 20 min,reminder
+read reminder every 20 hours,reminder
+What is sister's number?,search
+What do I have saved about charger?,search
+Get my iPad location,search
+I think,unclear
+What's the Paytm password?,search
+can you cancel the workout reminder,cancel_specific
+Remind me at 8am to take a break,reminder
+I'd like to cancel the gym reminder,cancel_specific
+Recurring reminder every 10 mins to take a break,reminder
+Remind me to attend meeting in 60 hours,reminder
+buy groceries in 10 minute,reminder
+Do,unclear
+My mom's phone number is 43215118,save
+Errr.,unclear
+I need to I want to turn off all my reminders now,cancel_all
+Get my medicine location,search
+HUH,unclear
+I need to stop all scheduled reminders right now,cancel_all
+Have I paid the bills?,search
+My laptop is in the bedroom,save
+Show me where my sunglasses is,search
+My colleague's address is 00002444,save
+The notebook is in the cabinet,save
+delete that stretch reminder,cancel_specific
+cancel the bills reminder,cancel_specific
+I don't want the dinner reminder anymore,cancel_specific
+Remind me to check email after 45 hrs,reminder
+Where did I keep my power bank?,search
+Wow.,unclear
+Where are my TV remote?,search
+Locate my medicine,search
+stretch at 4pm,reminder
+Find the earphones,search
+I WANT TO JUST CANCEL ALL MY REMINDERS NOW,cancel_all
+WHAT NOW?,unclear
+HOLD ON,unclear
+Test!,unclear
+Remind me to stand up every 20 hrs,reminder
+stop the grocery reminder,cancel_specific
+Remind me.,unclear
+cancel that bills reminder,cancel_specific
+stretch after 20 hours,reminder
+Where did I put my purse?,search
+JUST REMOVE ALL ALERTS RIGHT NOW,cancel_all
+The bike keys is in the kitchen,save
+My friend's anniversary is 43219705,save
+wallet is in the shelf,save
+Just i want to turn off all my reminders right now,cancel_all
+Remind me to walk around at 6am,reminder
+PLEASE REMOVE ALL NOTIFICATIONS PLEASE,cancel_all
+Find the credit card,search
+I stored my umbrella in the cupboard,save
+remove that grocery reminder,cancel_specific
+I want to turn off all notifications right now,cancel_all
+Look for my bag,search
+please delete break reminder,cancel_specific
+I want to remove the vitamins reminder,cancel_specific
+PLEASE JUST REMOVE ALL MY REMINDERS FOR ME,cancel_all
+Set alarm for 2pm to go to gym,reminder
+I want to cancel the call reminder,cancel_specific
+15 hour reminder to meditate,reminder
+After 30 mins remind me to read,reminder
+Look for my keys,search
+What's my Netflix password?,search
+delete the sleep reminder,cancel_specific
+do.,unclear
+I NEED TO CANCEL ALL MY REMINDERS RIGHT NOW,cancel_all
+I parked my jacket in nightstand,save
+Set alarm for 2pm to do laundry,reminder
+quickly clear all reminders,cancel_all
+Remind me to stand up after 5 hr,reminder
+Where did I store my laptop?,search
+can you stop the break reminder,cancel_specific
+At 4pm remind me to take medicine,reminder
+My sister's address is 12346103,save
+a?,unclear
+can you stop the stretch reminder,cancel_specific
+Where have I put my credit card?,search
+Have I saved anything about charger?,search
+Blah.,unclear
+Please remove all alerts,cancel_all
+EHH?,unclear
+I have put my glasses in the backpack,save
+Set alarm for 2pm to stretch,reminder
+COULD YOU I WANT TO DELETE ALL MY REMINDERS,cancel_all
+TO.,unclear
+Remind me at 6pm to take a break,reminder
+can you stop the meeting reminder,cancel_specific
+I NEED TO JUST TURN OFF ALL MY REMINDERS RIGHT NOW,cancel_all
+cancel that lunch reminder,cancel_specific
+UH!,unclear
+Quickly clear all pending reminders immediately,cancel_all
+stretch every 45 hr,reminder
+Remind me to study after 30 mins,reminder
+Remind me every 1 min to walk around,reminder
+What did I save about laptop?,search
+remove the medicine reminder,cancel_specific
+I need to cancel all alarms right now,cancel_all
+mom's number is 12344919,save
+What is doctor's address?,search
+i don't know!,unclear
+Tom has my credit card,save
+I left my jacket on the safe,save
+I NEED TO I WANT TO CLEAR ALL MY REMINDERS NOW,cancel_all
+Where did I keep my house keys?,search
+it,unclear
+Tell me about glasses,search
+call mom at 2pm,reminder
+can you stop the wake up reminder,cancel_specific
+What is the Gmail password?,search
+I don't need the morning reminder,cancel_specific
+Yes,unclear
+What is my Paytm PIN?,search
+call dad at 3pm,reminder
+Did I save iPad?,search
+Note that meeting is at 3pm,save
+Tell me my locker password,search
+HELLO!,unclear
+cancel exercise reminder,cancel_specific
+I'd like to cancel the yoga reminder,cancel_specific
+Where did I put my jacket?,search
+COULD YOU CANCEL EVERY REMINDER RIGHT NOW,cancel_all
+Remind me to eat dinner at 2pm,reminder
+I want to stop all recurring reminders,cancel_all
+My boss's birthday is 43212523,save
+just turn off all alarms,cancel_all
+thank you,unclear
+stop my posture reminder,cancel_specific
+At 2pm remind me to walk around,reminder
+Did I return the medicine?,search
+Please delete every reminder please,cancel_all
+cancel morning reminder,cancel_specific
+stand up in 30 minute,reminder
+remove sleep reminder,cancel_specific
+Do you have info about car keys?,search
+bbb?,unclear
+yes,unclear
+Look for my book,search
+The water bottle is in the pocket,save
+I want to delete all pending reminders now,cancel_all
+can you remove every single reminder immediately,cancel_all
+can you stop the vitamins reminder,cancel_specific
+2 hours reminder to check email,reminder
+Reminder in 5 min to sleep,reminder
+Did I note where my documents is?,search
+COULD YOU REMOVE EVERY SINGLE REMINDER FOR ME,cancel_all
+I'd like to delete the rent reminder,cancel_specific
+Where are the keys?,search
+Have I saved anything about documents?,search
+Repeat reminder to clean room every 2 minutes,reminder
+Wake me up at 7pm,reminder
+Note that flight is on Monday,save
+COULD YOU CANCEL ALL MY REMINDERS FOR ME,cancel_all
+Please remove all of them right now,cancel_all
+Create a reminder to drink water,reminder
+Could you please cancel all my reminders please,cancel_all
+Please can you cancel all reminders now,cancel_all
+I need a reminder to water the plants,reminder
+i need to stop all of them now,cancel_all
+Wake me up at 6am,reminder
+Find where I put my iPad,search
+Please find my ID card,search
+yep.,unclear
+What's the PIN for Paytm?,search
+Is there any info on bike keys?,search
+can you cancel the bills reminder,cancel_specific
+Where is my cable?,search
+can you delete the rent reminder,cancel_specific
+Remind me to feed the pet every 60 hrs,reminder
+cancel my reminder to stretch,cancel_specific
+could you stop all the reminders please,cancel_all
+I need to find my credit card,search
+After 60 hours remind me to buy groceries,reminder
+colleague's number is 24682024,save
+ok,unclear
+Reminder in 10 hour to meditate,reminder
+I want to delete all pending reminders right now,cancel_all
+I'd like to cancel the dinner reminder,cancel_specific
+YUP!,unclear
+please cancel evening reminder,cancel_specific
+Every 3 min remind me to study,reminder
+I NEED TO TURN OFF ALL RECURRING REMINDERS,cancel_all
+Remind me to water the plants every 20 mins,reminder
+Hi?,unclear
+cancel my stretch reminder,cancel_specific
+disable morning reminder,cancel_specific
+can you clear all scheduled reminders for me,cancel_all
+How are you.,unclear
+could you delete all recurring reminders,cancel_all
+remove my study reminder,cancel_specific
+remove that study reminder,cancel_specific
+Let me think!,unclear
+Cancel all my reminders immediately,cancel_all
+I parked my wallet in counter,save
+yo?,unclear
+stop medicine reminder,cancel_specific
+Search for my phone,search
+I stored my wallet in the kitchen,save
+I need to just clear all my reminders right now,cancel_all
+mouse is in the top shelf,save
+PIN for Paytm is 4321,save
+Remind me to eat breakfast in 45 mins,reminder
+Did I note where my cable is?,search
+QUICKLY GET RID OF ALL REMINDERS,cancel_all
+hmmmm!,unclear
+I borrowed 100 from Tom,save
+JUST STOP ALL REMINDERS NOW,cancel_all
+wake up after 1 hour,reminder
+Quickly turn off all alarms please,cancel_all
+Please cancel all scheduled reminders right now,cancel_all
+Password for Spotify is pass@123,save
+I stored my earphones in the dining table,save
+Every 15 minute charge phone,reminder
+remove that break reminder,cancel_specific
+never mind.,unclear
+My colleague's phone number is 12344040,save
+cancel call reminder,cancel_specific
+Can you please turn off all reminders right now,cancel_all
+can you cancel the break reminder,cancel_specific
+Wake me up at 10am,reminder
+Recurring reminder every 20 hrs to drink water,reminder
+an.,unclear
+Create a reminder to go to gym,reminder
+Where can I find my earphones?,search
+buy groceries every 60 hr,reminder
+I don't want the reading reminder anymore,cancel_specific
+Find my keyboard,search
+In 5 minute remind me to buy groceries,reminder
+I gave my bag to mom,save
+What is the phone password?,search
+I WANT TO TURN OFF ALL ALERTS IMMEDIATELY,cancel_all
+QUICKLY CANCEL ALL RECURRING REMINDERS RIGHT NOW,cancel_all
+Could you can you clear all reminders for me,cancel_all
+I don't need the exercise reminder,cancel_specific
+Where did I keep my remote?,search
+Repeat reminder to call dad every 2 minutes,reminder
+please stop breakfast reminder,cancel_specific
+can you clear every reminder please,cancel_all
+Do you know where my backpack is?,search
+An,unclear
+Aaa?,unclear
+remove meeting reminder,cancel_specific
+can you turn off everything,cancel_all
+Password for safe is test1234,save
+can you delete the workout reminder,cancel_specific
+K?,unclear
+i need to turn off all alarms for me,cancel_all
+doctor's phone number is 12349159,save
+Recall where I put my purse,search
+PhonePe password is password123,save
+no need for workout reminder,cancel_specific
+do laundry every 2 mins,reminder
+clean room every 45 minutes,reminder
+Can you please turn off all my reminders,cancel_all
+I want to stop the breakfast reminder,cancel_specific
+My jacket is on the cupboard,save
+What's my PhonePe password?,search
+Recurring reminder every 30 minute to clean room,reminder
+I no longer need the breakfast reminder,cancel_specific
+The laptop password is admin123,save
+I need to stop all alarms immediately,cancel_all
+Remind me to take a break after 60 minute,reminder
+Just wondering!,unclear
+Reminder in 10 hours to call mom,reminder
+Tell me about watch,search
+HI!,unclear
+So what??,unclear
+stop hourly reminder,cancel_specific
+Locate my iPad,search
+Ahh!,unclear
+Where's the backpack?,search
+hiya.,unclear
+disable exercise reminder,cancel_specific
+DEL,unclear
+Recurring reminder every 10 hrs to do laundry,reminder
+stretch reminder every 10 hrs,reminder
+The code for ATM is letmein,save
+just cancel all of them right now,cancel_all
+please stop yoga reminder,cancel_specific
+Reminder in 45 hour to charge phone,reminder
+Find the car keys,search
+Remember that deadline is at 3pm,save
+The meeting is next week,save
+Cancel all alarms right now,cancel_all
+fine,unclear
+Reminder in 2 minute to meditate,reminder
+My anniversary is 78903211,save
+I FORGOT.,unclear
+Do I owe dad money?,search
+Repeat reminder to eat lunch every 30 hours,reminder
+Look up ID card,search
+stop my dinner reminder,cancel_specific
+SURE.,unclear
+Note that deadline is at 10am,save
+do laundry after 45 hour,reminder
+eat lunch reminder,reminder
+remove all my reminders immediately,cancel_all
+I NEED TO I WANT TO DELETE ALL REMINDERS FOR ME,cancel_all
+Help me find my notebook,search
+Don't forget appointment is at 10am,save
+cancel the email reminder,cancel_specific
+In 45 minute remind me to walk around,reminder
+What is my Amazon password?,search
+forget it,unclear
+remove the daily reminder,cancel_specific
+JUST END ALL REMINDERS RIGHT NOW,cancel_all
+quickly i want to delete all my reminders right now,cancel_all
+quickly cancel every single reminder immediately,cancel_all
+My safe password is qwerty,save
+read in 2 hrs,reminder
+please stop daily reminder,cancel_specific
+Remember where my glasses is?,search
+Did I save notebook?,search
+stop all alarms immediately,cancel_all
+Nope!,unclear
+My Facebook PIN is 9876,save
+I NEED TO CLEAR ALL SCHEDULED REMINDERS FOR ME,cancel_all
+My mom's number is 12349041,save
+Where is the car keys?,search
+cancel the evening reminder,cancel_specific
+The ATM password is admin123,save
+The,unclear
+TURN OFF ALL MY REMINDERS NOW,cancel_all
+can you kill all reminders,cancel_all
+Where have I put my sunglasses?,search
+Set alarm for 8pm to walk around,reminder
+Did I return the sunglasses?,search
+turn off the workout reminder,cancel_specific
+Every 15 minute remind me to meditate,reminder
+Where can I find my phone?,search
+Password for Paytm is letmein,save
+quickly I want to clear all reminders right now,cancel_all
+Repeat reminder to take vitamins every 45 minute,reminder
+Nice!,unclear
+Can you find my book?,search
+Set alarm for 12pm to eat breakfast,reminder
+123,unclear
+cancel the stretch reminder,cancel_specific
+Find where I put my keys,search
+I want to delete the dinner reminder,cancel_specific
+Do you know where my cable is?,search
+Set alarm for 10am,reminder
+i need to can you clear all reminders right now,cancel_all
+Where is the charger?,search
+the.,unclear
+idk!,unclear
+CAN?,unclear
+Don't forget train is tomorrow,save
+I need to find my tablet,search
+quickly delete all alarms immediately,cancel_all
+hello,unclear
+Repeat reminder to practice yoga every 60 hrs,reminder
+What is my Spotify PIN?,search
+boss's number is 24688983,save
+Remember where my ID card is?,search
+delete my grocery reminder,cancel_specific
+Alarm at 8pm,reminder
+disable bills reminder,cancel_specific
+uhh?,unclear
+Don't forget deadline is at 10am,save
+DO!,unclear
+Search car keys,search
+turn off all scheduled reminders please,cancel_all
+could you turn off all notifications immediately,cancel_all
+My laptop password is test1234,save
+My email PIN is 5555,save
+Remind me to eat lunch after 60 hr,reminder
+I have put my ID card in the lot B,save
+Remind me every 5 minute to take medicine,reminder
+Is.,unclear
+delete the reminder to pay bills,cancel_specific
+dad's phone number is 55556363,save
+stop that hourly reminder,cancel_specific
+Remind me to clean room after 45 minute,reminder
+CAN YOU CAN YOU CLEAR ALL REMINDERS RIGHT NOW,cancel_all
+La la la!,unclear
+Set a reminder to walk around,reminder
+an!,unclear
+Recall where I put my house keys,search
+Wake me up at 5am,reminder
+YO.,unclear
+can you stop all recurring reminders right now,cancel_all
+do laundry every 3 hours,reminder
+BLAH.,unclear
+Good morning,unclear
+I put my debit card in the safe,save
+Have I saved anything about power bank?,search
+My PhonePe PIN is 1357,save
+Look for my cable,search
+Remember where my car keys is?,search
+The appointment is on Friday,save
+Just clear all pending reminders for me,cancel_all
+I have meeting at 5pm,save
+can you delete the medicine reminder,cancel_specific
+I owe mom 2000 rupees,save
+Where's the house keys?,search
+My Spotify password is password123,save
+Create a reminder to eat lunch,reminder
+Did I save headphones?,search
+Set alarm for 5am,reminder
+The code for laptop is qwerty,save
+Give me my Netflix password,search
+please remove study reminder,cancel_specific
+hey.,unclear
+I stored my camera in the garage,save
+Remind me to do laundry after 30 minutes,reminder
+I want to clear every reminder,cancel_all
+Where can I find my jacket?,search
+stop reminding me about meditation,cancel_specific
+disable walk reminder,cancel_specific
+I need a reminder to take medicine,reminder
+Every 1 hour remind me to sleep,reminder
+Could you stop every single reminder please,cancel_all
+Get my notebook location,search
+water the plants every 15 hr,reminder
+I need to i want to remove all my reminders now,cancel_all
+Please please stop all reminders immediately,cancel_all
+Nah.,unclear
+Search for ID card,search
+could you cancel all scheduled reminders right now,cancel_all
+delete water reminder,cancel_specific
+can you stop the call reminder,cancel_specific
+quickly i want to clear all my reminders please,cancel_all
+Give me the bank PIN,search
+quickly delete all pending reminders please,cancel_all
+laptop password is secret456,save
+I gave my remote to Tom,save
+I want to please turn off all my reminders right now,cancel_all
+One sec!,unclear
+Do you know where my mouse is?,search
+I WANT TO STOP EVERYTHING NOW,cancel_all
+i want to cancel all alerts for me,cancel_all
+stop break reminder,cancel_specific
+Please clear all pending reminders immediately,cancel_all
+stop that dinner reminder,cancel_specific
+CAN YOU CANCEL ALL ALERTS NOW,cancel_all
+Get rid of all my reminders now,cancel_all
+My phone number is 78909030,save
+UH.,unclear
+how??,unclear
+Brb?,unclear
+I lent 2000 to John,save
+ZZZ.,unclear
+My PhonePe password is abc123,save
+After 3 hour remind me to call mom,reminder
+Remind me to sleep in 5 mins,reminder
+i want to just turn off all reminders immediately,cancel_all
+The PhonePe password is qwerty,save
+Oops?,unclear
+I kept my jacket in the bottom drawer,save
+PIN for PhonePe is 4321,save
+friend has my charger,save
+Note that class is on Friday,save
+PLEASE TURN OFF ALL MY REMINDERS,cancel_all
+please delete all alerts,cancel_all
+Where did I leave my purse?,search
+Quickly remove all notifications please,cancel_all
+stop reminding me about stretch,cancel_specific
+After 15 hrs remind me to water the plants,reminder
+QUICKLY I WANT ALL REMINDERS GONE,cancel_all
+Do I have medicine?,search
+remove breakfast reminder,cancel_specific
+STOP ALL ACTIVE REMINDERS,cancel_all
+Where did I put my umbrella?,search
+I'd like to remove the workout reminder,cancel_specific
+YUP?,unclear
+can you delete the vitamins reminder,cancel_specific
+Not sure.,unclear
+okay?,unclear
+Please turn off every reminder immediately,cancel_all
+can you can you turn off all my reminders please,cancel_all
+friend's address is 98762540,save
+Set alarm for 7am to go to gym,reminder
+doctor's birthday is 43214415,save
+good evening?,unclear
+Locate my car keys,search
+In 60 min remind me to go to gym,reminder
+Paytm PIN is 4321,save
+please stop morning reminder,cancel_specific
+Tell me about power bank,search
+At 12pm remind me to charge phone,reminder
+quickly just cancel all reminders,cancel_all
+What's my home WiFi password?,search
+What do I have saved about keys?,search
+Every 10 hr read,reminder
+Help me find my mouse,search
+practice yoga at 5am,reminder
+I kept my remote in the safe,save
+PhonePe password is test1234,save
+Meh,unclear
+So??,unclear
+Every 20 hour wake up,reminder
+Look for my TV remote,search
+I NEED TO REMOVE EVERY REMINDER IMMEDIATELY,cancel_all
+Where did I keep my bike keys?,search
+My jacket is where?,search
+Is there any info on camera?,search
+I borrowed the ID card from friend,save
+I owe Lisa 5000 rupees,save
+Where are the book?,search
+Can you clear everything immediately,cancel_all
+I want to cancel all scheduled reminders now,cancel_all
+Every 2 mins pay bills,reminder
+Set a reminder to call dad,reminder
+eat breakfast in 15 hrs,reminder
+omg,unclear
+I gave my glasses to Sarah,save
+Set a reminder to check email,reminder
+SKIP.,unclear
+I kept my keyboard in the lot A,save
+I borrowed the headphones from mom,save
+Note that call is tomorrow,save
+Remind me to call dad every 2 minute,reminder
+Can you just clear all my reminders please,cancel_all
+Remind me every 15 min to buy groceries,reminder
+My doctor's number is 24684629,save
+take a break after 10 hr,reminder
+I need to find my keyboard,search
+Have I saved anything about notebook?,search
+My keys is on the locker,save
+turn off the sleep reminder,cancel_specific
+Can you find my medicine?,search
+Remind me to meditate at 8pm,reminder
+I'd like to remove the daily reminder,cancel_specific
+Is there any info on purse?,search
+turn off my evening reminder,cancel_specific
+I no longer need the dinner reminder,cancel_specific
+GPay password is abc123,save
+friend has my cable,save
+PIN for ATM is 5555,save
+The deadline is tomorrow,save
+Remind me to sleep every 60 mins,reminder
+NOPE,unclear
+just i want to turn off all my reminders immediately,cancel_all
+PIN for Google is 7890,save
+Got it?,unclear
+Where have I put my laptop?,search
+Just please delete all reminders please,cancel_all
+Repeat reminder to buy groceries every 30 hour,reminder
+What is colleague's birthday?,search
+can you remove all alarms immediately,cancel_all
+cool?,unclear
+please just delete all reminders please,cancel_all
+skip,unclear
+stop the hourly reminder,cancel_specific
+Ehh,unclear
+Do?,unclear
+Please clear all alarms for me,cancel_all
+no need for stretch reminder,cancel_specific
+Where did I keep my umbrella?,search
+Recurring reminder every 1 minute to sleep,reminder
+Facebook password is pass@123,save
+My anniversary is 78907193,save
+Recurring reminder every 60 hours to practice yoga,reminder
+What's the home WiFi password?,search
+I left my tablet on the shelf,save
+Then?,unclear
+What was the laptop password?,search
+Every 1 hours remind me to eat dinner,reminder
+What is my Instagram PIN?,search
+turn off my reading reminder,cancel_specific
+can you delete the daily reminder,cancel_specific
+Where can I find my debit card?,search
+cancel my gym reminder,cancel_specific
+take a break after 15 minutes,reminder
+Where did I place my tablet?,search
+PIN for bank is 5555,save
+ehh!,unclear
+ALRIGHT,unclear
+Note that meeting is on Monday,save
+I'd like to cancel the daily reminder,cancel_specific
+Tom has my phone,save
+I have meeting next week,save
+Did I note where my TV remote is?,search
+stretch at 6pm,reminder
+turn off the meeting reminder,cancel_specific
+WAIT,unclear
+SO.,unclear
+What's the PIN for garage?,search
+An!,unclear
+The door password is password123,save
+I kept my bike keys in the drawer,save
+Remind me every 5 minute to stand up,reminder
+So,unclear
+CANCEL ALL ACTIVE REMINDERS IMMEDIATELY,cancel_all
+In 30 minute remind me to sleep,reminder
+Did I put book somewhere?,search
+I NEED TO PLEASE CLEAR ALL MY REMINDERS NOW,cancel_all
+Hmmmm.,unclear
+I WANT TO I WANT TO REMOVE ALL MY REMINDERS NOW,cancel_all
+SO WHAT?!,unclear
+I'm tired!,unclear
+del?,unclear
+I want to cancel the rent reminder,cancel_specific
+Where's my debit card?,search
+Remind me to take a break after 3 hour,reminder
+I borrowed the camera from Lisa,save
+please delete meditation reminder,cancel_specific
+I WANT TO JUST TURN OFF ALL REMINDERS RIGHT NOW,cancel_all
+turn off my meeting reminder,cancel_specific
+My number is 13573271,save
+Phone,unclear
+good evening!,unclear
+Where have I put my passport?,search
+Did I put medicine somewhere?,search
+The train is at 9am,save
+PIN for Amazon is 9876,save
+I parked my wallet in living room,save
+I'd like to remove the break reminder,cancel_specific
+can you delete the grocery reminder,cancel_specific
+Help me find my credit card,search
+Clear all my reminders for me,cancel_all
+COULD YOU CLEAR ALL SCHEDULED REMINDERS,cancel_all
+I have deadline at 5pm,save
+Remember where my sunglasses is?,search
+just clear all my reminders now,cancel_all
+I left my purse on the rack,save
+At 8pm remind me to feed the pet,reminder
+I borrowed 100 from dad,save
+MY,unclear
+My number is 43212631,save
+COULD YOU CLEAR ALL REMINDERS,cancel_all
+I gave my keyboard to Emma,save
+i want to cancel every reminder,cancel_all
+Reminder at 1pm to eat lunch,reminder
+My keys is where?,search
+Do you have info about jacket?,search
+delete gym reminder,cancel_specific
+Remind me to pay bills,reminder
+What was the home WiFi password?,search
+turn off my study reminder,cancel_specific
+The Netflix password is letmein,save
+Do I have phone?,search
+Every 15 minutes attend meeting,reminder
+Do you have info about remote?,search
+please stop all the reminders please,cancel_all
+please i want to cancel all reminders immediately,cancel_all
+remove the wake up reminder,cancel_specific
+Search for earphones,search
+Remember where my bag is?,search
+Just delete every reminder,cancel_all
+I stored my notebook in the car,save
+I'd like to remove the grocery reminder,cancel_specific
+Could you please clear all reminders please,cancel_all
+Where did I leave my wallet?,search
+Where can I find my glasses?,search
+please stop call reminder,cancel_specific
+remove all pending reminders for me,cancel_all
+My train is at 10am,save
+Where did I keep my watch?,search
+K.,unclear
+I borrowed the keyboard from friend,save
+Show me my Facebook password,search
+I don't want the vitamins reminder anymore,cancel_specific
+delete that gym reminder,cancel_specific
+Did I return the power bank?,search
+Did I note where my purse is?,search
+Remind me to take vitamins at 9am,reminder
+Every 5 minutes remind me to study,reminder
+Give me the office WiFi PIN,search
+Does mom owe me money?,search
+Every 20 hrs check email,reminder
+PhonePe PIN is 1234,save
+exercise after 1 min,reminder
+What's the door password?,search
+what's up.,unclear
+The bank password is pass@123,save
+please i want to delete all reminders immediately,cancel_all
+eat dinner reminder every 60 hr,reminder
+The laptop is in the hook,save
+Remind me at 9am to walk around,reminder
+PLEASE REMOVE ALL PENDING REMINDERS IMMEDIATELY,cancel_all
+Search for my watch,search
+stop reminding me about gym,cancel_specific
+COOL.,unclear
+Did I put jacket somewhere?,search
+exercise in 5 hour,reminder
+Do you have info about wallet?,search
+quickly turn off all reminders now,cancel_all
+Do I have jacket?,search
+What do you know about wallet?,search
+I want to stop the bills reminder,cancel_specific
+I have train next week,save
+not sure?,unclear
+Set alarm for 2pm to study,reminder
+delete my reminder to take medicine,cancel_specific
+can you i want to clear all reminders please,cancel_all
+My jacket is in the locker,save
+I borrowed 1000 from Sarah,save
+Remember where my jacket is?,search
+At 12pm remind me to practice yoga,reminder
+Do I have any exam today?,search
+Did I note where my ID card is?,search
+delete my reminder to wake up,cancel_specific
+I think.,unclear
+turn off the medicine reminder,cancel_specific
+Yeah?!,unclear
+cancel the reminder to call mom,cancel_specific
+COULD YOU CAN YOU STOP ALL MY REMINDERS IMMEDIATELY,cancel_all
+stop my reminder to call mom,cancel_specific
+just can you remove all reminders for me,cancel_all
+My neighbor's birthday is 00005969,save
+Don't forget deadline is on Friday,save
+In 60 minute remind me to charge phone,reminder
+friend's birthday is 55557646,save
+please cancel wake up reminder,cancel_specific
+Where's the medicine?,search
+Please i want to stop all my reminders please,cancel_all
+Omg.,unclear
+Don't forget appointment is at 3pm,save
+CAN YOU STOP ALL THE REMINDERS,cancel_all
+no need for breakfast reminder,cancel_specific
+go to gym reminder every 2 min,reminder
+My keyboard is where?,search
+can you cancel the vitamins reminder,cancel_specific
+JUST CAN YOU REMOVE ALL REMINDERS,cancel_all
+stop reminding me about morning,cancel_specific
+I'd like to stop the reading reminder,cancel_specific
+COULD YOU PLEASE TURN OFF ALL MY REMINDERS,cancel_all
+QUICKLY DELETE ALL NOTIFICATIONS NOW,cancel_all
+I kept my jacket in the closet,save
+I'd like to stop the gym reminder,cancel_specific
+stop the reminder to take medicine,cancel_specific
+remove the yoga reminder,cancel_specific
+please cancel grocery reminder,cancel_specific
+Just remove all alerts immediately,cancel_all
+Did I return the laptop?,search
+Keys,unclear
+wake up in 5 minute,reminder
+Remind me to wake up at 7pm,reminder
+just can you turn off all my reminders please,cancel_all
+please remove sleep reminder,cancel_specific
+Like?.,unclear
+Yes?,unclear
+Quickly turn off all alerts now,cancel_all
+Netflix password is letmein,save
+What's YouTube password?,search
+Don't forget class is at 3pm,save
+please just stop all reminders right now,cancel_all
+turn off the meditation reminder,cancel_specific
+just just remove all my reminders immediately,cancel_all
+Recurring reminder every 10 hr to eat dinner,reminder
+Could you stop all notifications for me,cancel_all
+Do I owe Lisa money?,search
+BE?,unclear
+Where have I put my charger?,search
+cancel the grocery reminder,cancel_specific
+deactivate reading reminder,cancel_specific
+My anniversary is 98767550,save
+Could you turn off everything immediately,cancel_all
+I left my headphones on the shelf,save
+Where's my bike keys?,search
+go to gym reminder every 10 minute,reminder
+delete the lunch reminder,cancel_specific
+I don't need the medicine reminder,cancel_specific
+Did I put backpack somewhere?,search
+Where are my water bottle?,search
+My dad's number is 98768234,save
+can you cancel the walk reminder,cancel_specific
+please end all reminders,cancel_all
+Show me where my jacket is,search
+I have put my mouse in the pocket,save
+123?,unclear
+sleep at 10am,reminder
+My phone is on the garage,save
+I WANT TO REMOVE ALL MY REMINDERS IMMEDIATELY,cancel_all
+I no longer need the wake up reminder,cancel_specific
+Remind me at 5am to charge phone,reminder
+I'd like to cancel the stretch reminder,cancel_specific
+wallet is in the drawer,save
+THANKS.,unclear
+I don't know?,unclear
+delete that medicine reminder,cancel_specific
+remove meditation reminder,cancel_specific
+Remind me to call dad at 12pm,reminder
+Fine.,unclear
+eat lunch after 1 hr,reminder
+Get!,unclear
+Have I saved anything about passport?,search
+Where did I store my bag?,search
+k!,unclear
+My anniversary is 24687896,save
+phone is in the car,save
+NICE!,unclear
+THE?,unclear
+What's the PIN for locker?,search
+THE!,unclear
+Quickly please turn off all my reminders now,cancel_all
+JUST DELETE ALL ACTIVE REMINDERS,cancel_all
+Give me my garage password,search
+turn off my sleep reminder,cancel_specific
+alright.,unclear
+Where's my earphones?,search
+Great!,unclear
+My laptop password is admin123,save
+I kept my keys in the backpack,save
+I WANT TO PLEASE TURN OFF ALL MY REMINDERS PLEASE,cancel_all
+Where can I find my sunglasses?,search
+I want to delete every single reminder for me,cancel_all
+Recurring reminder every 20 minutes to wake up,reminder
+Could you clear all recurring reminders for me,cancel_all
+HUH!,unclear
+Blah,unclear
+Every 2 hrs clean room,reminder
+What is the garage password?,search
+The class is next week,save
+stop reminding me about reading,cancel_specific
+Every 20 hour check email,reminder
+please stop every single reminder right now,cancel_all
+stop my walk reminder,cancel_specific
+i need to i want to cancel all reminders please,cancel_all
+PLEASE TURN OFF ALL NOTIFICATIONS PLEASE,cancel_all
+aha.,unclear
+hmmmm,unclear
+I borrowed 5000 from Mike,save
+Repeat reminder to call dad every 30 mins,reminder
+ATM PIN is 9876,save
+brb?,unclear
+nah.,unclear
+Did I put TV remote somewhere?,search
+Remember that deadline is on Friday,save
+go to gym after 2 hrs,reminder
+Note that appointment is at 10am,save
+Help me find my keys,search
+I have put my watch in the hook,save
+stop the water reminder,cancel_specific
+I borrowed 1000 from colleague,save
+My house keys is in the living room,save
+Remind me to do laundry every 1 mins,reminder
+I don't want the sleep reminder anymore,cancel_specific
+OOPS,unclear
+QUICKLY TURN OFF ALL REMINDERS PLEASE,cancel_all
+Remind me to read after 10 hr,reminder
+I borrowed the remote from mom,save
+I WANT TO DELETE EVERYTHING NOW,cancel_all
+i need to stop all recurring reminders immediately,cancel_all
+i want to just stop all reminders please,cancel_all
+exercise every 30 hour,reminder
+Every 20 min remind me to sleep,reminder
+I no longer need the bills reminder,cancel_specific
+My passport is on the hook,save
+delete the hydration reminder,cancel_specific
+cancel the walk reminder,cancel_specific
+drink water after 1 mins,reminder
+I need to delete all my reminders immediately,cancel_all
+turn off the daily reminder,cancel_specific
+In 3 hrs remind me to pay bills,reminder
+remove my stretch reminder,cancel_specific
+What is the door password?,search
+stop the break reminder,cancel_specific
+My mom's phone number is 55555072,save
+The code for locker is pass@123,save
+Find my glasses,search
+Where did I put my book?,search
+cancel the breakfast reminder,cancel_specific
+JUST I WANT TO TURN OFF ALL MY REMINDERS RIGHT NOW,cancel_all
+Ehh?,unclear
+and then?!,unclear
+It.,unclear
+exercise at 5pm,reminder
+i,unclear
+Where did I keep my glasses?,search
+Set a reminder to take medicine,reminder
+My phone number is 00007521,save
+COOL!,unclear
+At 7pm remind me to call dad,reminder
+AND THEN?.,unclear
+I,unclear
+Hi,unclear
+Remind me at 7pm to take vitamins,reminder
+turn off the rent reminder,cancel_specific
+lol?,unclear
+Just remove all pending reminders please,cancel_all
+I want to remove all active reminders immediately,cancel_all
+I parked my credit card in bottom drawer,save
+can you cancel all reminders immediately,cancel_all
+1 hrs reminder to stretch,reminder
+Okay,unclear
+stop reminding me to call mom,cancel_specific
+Password for locker is abc123,save
+well?,unclear
+I gave my bike keys to Emma,save
+Where are my backpack?,search
+remove the morning reminder,cancel_specific
+exercise in 2 hour,reminder
+Wake me at 4pm,reminder
+I need to just turn off all my reminders for me,cancel_all
+Search for bike keys,search
+Show me where my cable is,search
+remove my hourly reminder,cancel_specific
+What is sister's anniversary?,search
+Every 20 hrs remind me to eat lunch,reminder
+Do I have any meeting today?,search
+ohh?,unclear
+The deadline is at 3pm,save
+no more sleep reminder,cancel_specific
+quickly clear all scheduled reminders,cancel_all
+call mom every 60 mins,reminder
+Where did I leave my iPad?,search
+Password for PhonePe is admin123,save
+Please find my notebook,search
+My address is 98766426,save
+I have train at 5pm,save
+Find my backpack,search
+Reminder to eat breakfast,reminder
+JUST TURN OFF EVERY SINGLE REMINDER PLEASE,cancel_all
+HOW ARE YOU.,unclear
+can you stop all the reminders for me,cancel_all
+Did I pay the rent?,search
+no need for break reminder,cancel_specific
+please stop break reminder,cancel_specific
+MY?,unclear
+Note that class is tomorrow,save
+Repeat reminder to take medicine every 5 hrs,reminder
+Got it!,unclear
+SO?.,unclear
+Did I note where my tablet is?,search
+My safe PIN is 7890,save
+deactivate walk reminder,cancel_specific
+can you remove the yoga reminder,cancel_specific
+huh!,unclear
+I no longer need the gym reminder,cancel_specific
+Do you know where my phone is?,search
+Remind me to eat breakfast please,reminder
+Remind me to check email at 5pm,reminder
+can you stop the hourly reminder,cancel_specific
+Did I return the earphones?,search
+quickly clear all pending reminders for me,cancel_all
+I borrowed 2000 from Mike,save
+45 hrs reminder to stand up,reminder
+30 minute reminder to stretch,reminder
+After 5 hours remind me to exercise,reminder
+My brother's birthday is 55555715,save
+please delete all reminders now,cancel_all
+Repeat reminder to wake up every 1 minute,reminder
+My wallet is in the safe,save
+Okay.,unclear
+Recurring reminder every 1 mins to call mom,reminder
+Give me the phone PIN,search
+COULD YOU REMOVE EVERY REMINDER,cancel_all
+Remind me to wake up after 15 hr,reminder
+please remove reading reminder,cancel_specific
+WiFi password is letmein,save
+Alarm at 4pm,reminder
+PLEASE I WANT TO CANCEL ALL REMINDERS PLEASE,cancel_all
+delete the reminder to eat lunch,cancel_specific
+stop the dinner reminder,cancel_specific
+Remember where my remote is?,search
+Note that call is at 9am,save
+Tell me where my debit card is,search
+TURN OFF ALL ACTIVE REMINDERS NOW,cancel_all
+ERASE ALL REMINDERS NOW,cancel_all
+Set alarm for 9am to meditate,reminder
+Remind me to take vitamins every 10 mins,reminder
+bike keys is in the box,save
+I kept my credit card in the car,save
+XYZ,unclear
+Look for my tablet,search
+cancel my evening reminder,cancel_specific
+2 minutes reminder to study,reminder
+Find the cable,search
+HIYA,unclear
+I have exam at 9am,save
+remove my water reminder,cancel_specific
+I left my book on the pocket,save
+I DON'T KNOW?,unclear
+Get my book location,search
+Show me my GPay password,search
+I'd like to cancel the study reminder,cancel_specific
+Wake me at 9am,reminder
+My flight is at 3pm,save
+GPay password is pass@123,save
+The exam is at 10am,save
+bbb.,unclear
+Remind me every 15 minutes to take vitamins,reminder
+stop the workout reminder,cancel_specific
+take vitamins every 45 hours,reminder
+Do you know where my passport is?,search
+power bank is in the garage,save
+Wallet!,unclear
+Where are my jacket?,search
+Do you know where my camera is?,search
+remove that hydration reminder,cancel_specific
+I WANT TO CLEAR EVERY REMINDER IMMEDIATELY,cancel_all
+Did I put umbrella somewhere?,search
+Show me where my iPad is,search
+The WiFi password is secret456,save
+delete workout reminder,cancel_specific
+YEAH?.,unclear
+Search for sunglasses,search
+What is the WiFi password?,search
+HIYA!,unclear
+Remind me to meditate in 20 minutes,reminder
+I need to please remove all reminders now,cancel_all
+Create a reminder to feed the pet,reminder
+I need a reminder to sleep,reminder
+delete my water reminder,cancel_specific
+I want to stop all reminders immediately,cancel_all
+can you just cancel all reminders right now,cancel_all
+My camera is on the shelf,save
+just I want to clear all my reminders for me,cancel_all
+remove all scheduled reminders for me,cancel_all
+WHAT?!,unclear
+Maybe?,unclear
+Find the wallet,search
+Where did I keep my book?,search
+Did I note where my keys is?,search
+My phone PIN is 1357,save
+Where's the jacket?,search
+be,unclear
+CAN YOU REMOVE ALL ALERTS FOR ME,cancel_all
+Remind me to wake up,reminder
+GET?,unclear
+What's the Amazon password?,search
+Xyz?,unclear
+eat lunch at 8am,reminder
+Just just stop all reminders please,cancel_all
+NOT SURE.,unclear
+don't remind me about rent anymore,cancel_specific
+Show me my Paytm password,search
+could you turn off all pending reminders immediately,cancel_all
+Blah?,unclear
+Where are my bag?,search
+I have call on Monday,save
+In 10 minute remind me to take a break,reminder
+Did I put glasses somewhere?,search
+And then?.,unclear
+But?.,unclear
+Do I have headphones?,search
+Don't forget deadline is at 5pm,save
+don't remind me about walk anymore,cancel_specific
+I don't need the walk reminder,cancel_specific
+I owe mom 1000 rupees,save
+i need to i want to remove all reminders now,cancel_all
+ASDF.,unclear
+Find my umbrella,search
+WHAT?.,unclear
+Remind me at 7pm to pay bills,reminder
+Repeat reminder to walk around every 15 hr,reminder
+uh huh,unclear
+Don't let me forget to read,reminder
+I NEED TO CAN YOU TURN OFF ALL MY REMINDERS PLEASE,cancel_all
+OOPS?,unclear
+SO WHAT?.,unclear
+I need to find my watch,search
+power bank is in the lot B,save
+Every 20 min drink water,reminder
+eat lunch after 5 minutes,reminder
+COULD YOU I WANT ALL REMINDERS GONE,cancel_all
+DO?,unclear
+take a break after 60 hrs,reminder
+Where are my earphones?,search
+Where did I store my charger?,search
+Recurring reminder every 15 mins to call mom,reminder
+Remember that call is tomorrow,save
+I have put my jacket in the closet,save
+Sure?,unclear
+please cancel medicine reminder,cancel_specific
+Help me find my camera,search
+can you delete all scheduled reminders immediately,cancel_all
+Get my documents location,search
+I don't want the exercise reminder anymore,cancel_specific
+Do I have camera?,search
+Locate my sunglasses,search
+YEAH?,unclear
+Remind me to call dad in 10 minutes,reminder
+cancel my reminder to drink water,cancel_specific
+Hiya.,unclear
+I lent 1000 to Emma,save
+can you remove the email reminder,cancel_specific
+Look up TV remote,search
+Remember where my laptop is?,search
+Well,unclear
+I'd like to delete the reading reminder,cancel_specific
+Every 20 minutes remind me to walk around,reminder
+Where's my credit card?,search
+can you just clear all my reminders right now,cancel_all
+delete the bills reminder,cancel_specific
+I owe Tom 500 rupees,save
+JUST WONDERING,unclear
+BLAH,unclear
+Quickly just remove all my reminders now,cancel_all
+Remind me to clean room every 1 hour,reminder
+Show me where my TV remote is,search
+I kept my TV remote in the top shelf,save
+Repeat reminder to eat lunch every 2 minutes,reminder
+Find my headphones,search
+RIGHT?!,unclear
+Do I have notebook?,search
+Amazon password is admin123,save
+My glasses is on the pocket,save
+please remove hourly reminder,cancel_specific
+ID card is in the counter,save
+Where have I put my watch?,search
+CAN YOU STOP ALL NOTIFICATIONS,cancel_all
+remove that wake up reminder,cancel_specific
+stop my reminder to take medicine,cancel_specific
+My class is at 10am,save
+clean room reminder every 10 minute,reminder
+Hold on?,unclear
+lol.,unclear
+THE.,unclear
+hello?,unclear
+stop that yoga reminder,cancel_specific
+ONE SEC?,unclear
+My address is 13576406,save
+I don't want the email reminder anymore,cancel_specific
+My debit card is on the bathroom,save
+how?!,unclear
+I'd like to cancel the medicine reminder,cancel_specific
+Where are my documents?,search
+Really?.,unclear
+Search purse,search
+Remind me every 60 minute to sleep,reminder
+My Paytm PIN is 1357,save
+I WANT TO JUST REMOVE ALL REMINDERS IMMEDIATELY,cancel_all
+help!,unclear
+I no longer need the hourly reminder,cancel_specific
+Amazon password is qwerty,save
+What time is the meeting?,search
+COULD YOU JUST REMOVE ALL REMINDERS,cancel_all
+I NEED TO TURN OFF ALL OF THEM,cancel_all
+Where's my book?,search
+HMMMM,unclear
+drink water after 5 hours,reminder
+My car keys is on the safe,save
+JUST CLEAR ALL NOTIFICATIONS RIGHT NOW,cancel_all
+Do I have wallet?,search
+walk around reminder,reminder
+Quickly cancel all the reminders now,cancel_all
+Set alarm for 9am to charge phone,reminder
+so?!,unclear
+could you delete all pending reminders immediately,cancel_all
+Remind me to feed the pet every 3 hours,reminder
+I lent 100 to colleague,save
+I need to clear all the reminders immediately,cancel_all
+I kept my phone in the top shelf,save
+I WANT TO DELETE ALL ALARMS FOR ME,cancel_all
+Reminder to water the plants,reminder
+So what?!,unclear
+After 2 hr remind me to take medicine,reminder
+I left my watch on the car,save
+I want to cancel all of them for me,cancel_all
+Please just remove all my reminders now,cancel_all
+Find where I put my earphones,search
+In 1 hour remind me to go to gym,reminder
+remove that posture reminder,cancel_specific
+just cancel all of them,cancel_all
+TO?,unclear
+sister's number is 24687171,save

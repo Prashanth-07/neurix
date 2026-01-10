@@ -1,0 +1,135 @@
+{
+  "config": {
+    "model_name": "google/mobilebert-uncased",
+    "max_length": 64,
+    "batch_size": 16,
+    "max_epochs": 15,
+    "learning_rate": 2e-05,
+    "n_folds": 5,
+    "confidence_threshold": 0.7
+  },
+  "cross_validation": {
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_val_accuracy": 1.0,
+        "epochs_trained": 6
+      },
+      {
+        "fold": 2,
+        "best_val_accuracy": 1.0,
+        "epochs_trained": 5
+      },
+      {
+        "fold": 3,
+        "best_val_accuracy": 0.9973244147157191,
+        "epochs_trained": 5
+      },
+      {
+        "fold": 4,
+        "best_val_accuracy": 1.0,
+        "epochs_trained": 5
+      },
+      {
+        "fold": 5,
+        "best_val_accuracy": 1.0,
+        "epochs_trained": 7
+      }
+    ],
+    "mean_accuracy": 0.9994648829431437,
+    "std_accuracy": 0.001070234113712365
+  },
+  "test_results": {
+    "accuracy": 1.0,
+    "accuracy_adjusted": 0.999245283018868,
+    "class_metrics": {
+      "save": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 227
+      },
+      "search": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 255
+      },
+      "reminder": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 219
+      },
+      "cancel_all": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 211
+      },
+      "cancel_specific": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 205
+      },
+      "unclear": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 208
+      }
+    },
+    "confusion_matrix": [
+      [
+        227,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        255,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        219,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        211,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        205,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        208
+      ]
+    ]
+  },
+  "timestamp": "2026-01-09T15:35:30.935104"
+}
