@@ -150,10 +150,18 @@ class LLMService {
               })
               .join("\n");
 
-      String systemPrompt = '''Answer using ONLY the memories provided. Be direct, under 20 words.
-- Use MOST RECENT memory if there are conflicts
-- Never say "according to memory" - just answer
-- Say "I don't know" only if no relevant memory exists''';
+      String systemPrompt = '''You are a helpful personal assistant answering questions about the user's stored memories.
+
+RULES:
+- Answer naturally and conversationally as if you personally remember
+- Give contextual answers that directly address the question
+- For "where" questions, answer with location context (e.g., "In your locker", "On the kitchen counter")
+- For "what" questions, describe the item/thing
+- For "when" questions, provide the time/date context
+- Use MOST RECENT memory if there are multiple or conflicting memories
+- Keep responses brief (under 15 words) but natural
+- Never mention "memory" or "according to" - speak as the user's assistant who remembers
+- Say "I don't have that information" only if no relevant memory exists''';
 
       String userMessage = '''Question: $query
 

@@ -12,6 +12,7 @@ import '../models/user_model.dart';
 import '../models/memory_model.dart';
 import '../models/reminder_model.dart';
 import '../utils/constants.dart';
+import '../widgets/confirmation_dialog.dart';
 import 'all_memories_screen.dart';
 import 'reminders_screen.dart';
 
@@ -204,19 +205,55 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       // STEP 2: Route based on intent (simple if-else)
       if (intent == 'save') {
-        // Add Memory: Save text + embedding to DB
-        print('[FLOW] -> SAVE MEMORY');
-        response = await _handleAddMemory(_transcribedText);
+        // Add Memory: Show confirmation dialog first
+        print('[FLOW] -> SAVE MEMORY (showing confirmation)');
+        setState(() { _isProcessing = false; });
+
+        final confirmed = await showConfirmationDialog(
+          context: context,
+          intent: 'save',
+          transcribedText: _transcribedText,
+        );
+
+        if (confirmed) {
+          print('[FLOW] User confirmed save');
+          setState(() { _isProcessing = true; _statusText = 'Saving...'; });
+          response = await _handleAddMemory(_transcribedText);
+        } else {
+          print('[FLOW] User cancelled save');
+          response = 'Okay, cancelled.';
+          await _speak(response);
+          setState(() { _statusText = 'Tap to speak'; _transcribedText = ''; });
+          return;
+        }
       } else if (intent == 'search') {
-        // Search Memory: Similarity search + LLM response
+        // Search Memory: No confirmation needed - execute immediately
         print('[FLOW] -> SEARCH MEMORY');
         response = await _handleSearchMemory(_transcribedText);
       } else if (intent == 'reminder') {
-        // Save Reminder: LLM parses time/type + save to DB
-        print('[FLOW] -> SAVE REMINDER');
-        response = await _handleCreateReminder(_transcribedText);
+        // Save Reminder: Show confirmation dialog first
+        print('[FLOW] -> SAVE REMINDER (showing confirmation)');
+        setState(() { _isProcessing = false; });
+
+        final confirmed = await showConfirmationDialog(
+          context: context,
+          intent: 'reminder',
+          transcribedText: _transcribedText,
+        );
+
+        if (confirmed) {
+          print('[FLOW] User confirmed reminder');
+          setState(() { _isProcessing = true; _statusText = 'Setting reminder...'; });
+          response = await _handleCreateReminder(_transcribedText);
+        } else {
+          print('[FLOW] User cancelled reminder');
+          response = 'Okay, cancelled.';
+          await _speak(response);
+          setState(() { _statusText = 'Tap to speak'; _transcribedText = ''; });
+          return;
+        }
       } else if (intent == 'cancel_reminder') {
-        // Delete Reminder: Find and delete from DB
+        // Delete Reminder: No confirmation needed - execute immediately
         print('[FLOW] -> DELETE REMINDER');
         response = await _handleCancelReminder(_transcribedText);
       } else {
