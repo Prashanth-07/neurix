@@ -1,16 +1,21 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:ui';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import '../models/reminder_model.dart';
 import 'local_db_service.dart';
-import 'alarm_helper_service.dart';
+
+// Conditional imports for Android-specific packages
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart'
+    if (dart.library.html) 'alarm_stub.dart';
+import 'alarm_helper_service.dart'
+    if (dart.library.html) 'alarm_stub.dart';
 
 /// Top-level callback for AndroidAlarmManager - runs in isolate when alarm fires
 /// This enables TTS to speak when the notification triggers and launches the alarm screen
@@ -260,45 +265,69 @@ class ReminderService {
     await _tts.setSpeechRate(0.5);
     await _tts.setVolume(1.0);
 
-    // Initialize Android Alarm Manager for background scheduling
-    await AndroidAlarmManager.initialize();
+    // Initialize Android Alarm Manager for background scheduling (Android only)
+    if (Platform.isAndroid) {
+      await AndroidAlarmManager.initialize();
+    }
 
     // Initialize notifications with callback for handling actions
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const initSettings = InitializationSettings(android: androidSettings);
+    const iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+    const initSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
 
     await _notifications.initialize(
       initSettings,
       onDidReceiveNotificationResponse: _onNotificationResponse,
     );
 
-    // Create notification channel
-    const androidChannel = AndroidNotificationChannel(
-      _channelId,
-      _channelName,
-      description: _channelDescription,
-      importance: Importance.high,
-      playSound: true,
-      enableVibration: true,
-    );
+    // Create notification channel (Android only)
+    if (Platform.isAndroid) {
+      const androidChannel = AndroidNotificationChannel(
+        _channelId,
+        _channelName,
+        description: _channelDescription,
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      );
 
-    final androidPlugin = _notifications
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin = _notifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
 
-    await androidPlugin?.createNotificationChannel(androidChannel);
+      await androidPlugin?.createNotificationChannel(androidChannel);
 
-    // Request exact alarm permission (required for Android 12+)
-    await _requestExactAlarmPermission(androidPlugin);
+      // Request exact alarm permission (required for Android 12+)
+      await _requestExactAlarmPermission(androidPlugin);
 
-    // Clean up any orphaned alarm data from previous sessions
-    await _cleanupOrphanedAlarmData();
+      // Clean up any orphaned alarm data from previous sessions
+      await _cleanupOrphanedAlarmData();
+    }
+
+    // iOS: Request notification permissions
+    if (Platform.isIOS) {
+      final iosPlugin = _notifications
+          .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>();
+      await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    }
 
     // Reschedule any active reminders on app start
     await _rescheduleAllActiveReminders();
 
     _isInitialized = true;
-    print('[ReminderService] Initialized with AlarmManager');
+    print('[ReminderService] Initialized${Platform.isAndroid ? ' with AlarmManager' : ' for iOS'}');
   }
 
   /// Request exact alarm permission for Android 12+ (API 31+)
@@ -340,27 +369,30 @@ class ReminderService {
   Future<void> _cleanupAlarmData(int alarmId, {bool cancelAlarm = true}) async {
     print('[ReminderService] Cleaning up all data for alarm $alarmId');
 
-    final prefs = await SharedPreferences.getInstance();
+    // Android-specific cleanup
+    if (Platform.isAndroid) {
+      final prefs = await SharedPreferences.getInstance();
 
-    // Remove alarm-specific data
-    await prefs.remove('alarm_$alarmId');
+      // Remove alarm-specific data
+      await prefs.remove('alarm_$alarmId');
 
-    // Remove active alarm data if it matches this alarm
-    final activeAlarmId = prefs.getInt('active_alarm_id');
-    if (activeAlarmId == alarmId) {
-      await prefs.remove('active_alarm_id');
-      await prefs.remove('active_alarm_message');
-      await prefs.remove('active_alarm_timestamp');
-      print('[ReminderService] Removed active alarm data for $alarmId');
+      // Remove active alarm data if it matches this alarm
+      final activeAlarmId = prefs.getInt('active_alarm_id');
+      if (activeAlarmId == alarmId) {
+        await prefs.remove('active_alarm_id');
+        await prefs.remove('active_alarm_message');
+        await prefs.remove('active_alarm_timestamp');
+        print('[ReminderService] Removed active alarm data for $alarmId');
+      }
+
+      // Cancel the Android alarm
+      if (cancelAlarm) {
+        await AndroidAlarmManager.cancel(alarmId);
+        print('[ReminderService] Cancelled Android alarm $alarmId');
+      }
     }
 
-    // Cancel the Android alarm
-    if (cancelAlarm) {
-      await AndroidAlarmManager.cancel(alarmId);
-      print('[ReminderService] Cancelled Android alarm $alarmId');
-    }
-
-    // Cancel any related notification
+    // Cancel any related notification (works on both platforms)
     final notificationId = _baseNotificationId + alarmId % 10000;
     await _notifications.cancel(notificationId);
     print('[ReminderService] Cancelled notification $notificationId');
@@ -500,8 +532,8 @@ class ReminderService {
   }
 
   /// Schedule a notification for a reminder
-  /// Primary: AndroidAlarmManager with TTS callback
-  /// Fallback: flutter_local_notifications zonedSchedule (no TTS)
+  /// Android: Primary AndroidAlarmManager with TTS callback, fallback to zonedSchedule
+  /// iOS: Use zonedSchedule for scheduled notifications
   Future<void> _scheduleReminderNotification(Reminder reminder) async {
     if (!reminder.isActive || reminder.nextTrigger == null) return;
 
@@ -516,6 +548,7 @@ class ReminderService {
     final notificationId = _baseNotificationId + alarmId % 10000;
 
     print('[ReminderService] ===== SCHEDULING NOTIFICATION =====');
+    print('[ReminderService] Platform: ${Platform.isAndroid ? 'Android' : 'iOS'}');
     print('[ReminderService] Message: "${reminder.message}"');
     print('[ReminderService] Now (local): ${DateTime.now()}');
     print('[ReminderService] Target (DateTime): ${reminder.nextTrigger}');
@@ -523,49 +556,81 @@ class ReminderService {
     print('[ReminderService] Alarm ID: $alarmId');
     print('[ReminderService] Notification ID: $notificationId');
 
-    // PRIMARY: Try AndroidAlarmManager with TTS callback
-    bool alarmScheduled = false;
-    try {
-      // Store reminder data for the callback to retrieve
-      final prefs = await SharedPreferences.getInstance();
-      final reminderData = jsonEncode({
-        'id': reminder.id,
-        'message': reminder.message,
-        'isRecurring': reminder.type == ReminderType.recurring,
-        'intervalMinutes': reminder.intervalMinutes,
-        'scheduledTimeMs': reminder.nextTrigger!.millisecondsSinceEpoch,
-      });
-      await prefs.setString('alarm_$alarmId', reminderData);
-      print('[ReminderService] Stored reminder data for alarm callback (scheduled: ${reminder.nextTrigger})');
+    if (Platform.isAndroid) {
+      // ANDROID: Try AndroidAlarmManager with TTS callback
+      bool alarmScheduled = false;
+      try {
+        // Store reminder data for the callback to retrieve
+        final prefs = await SharedPreferences.getInstance();
+        final reminderData = jsonEncode({
+          'id': reminder.id,
+          'message': reminder.message,
+          'isRecurring': reminder.type == ReminderType.recurring,
+          'intervalMinutes': reminder.intervalMinutes,
+          'scheduledTimeMs': reminder.nextTrigger!.millisecondsSinceEpoch,
+        });
+        await prefs.setString('alarm_$alarmId', reminderData);
+        print('[ReminderService] Stored reminder data for alarm callback (scheduled: ${reminder.nextTrigger})');
 
-      // Schedule the alarm with callback
-      alarmScheduled = await AndroidAlarmManager.oneShotAt(
-        reminder.nextTrigger!,
-        alarmId,
-        alarmCallback,
-        exact: true,
-        wakeup: true,
-        rescheduleOnReboot: true,
-        allowWhileIdle: true,
-      );
-      print('[ReminderService] AndroidAlarmManager scheduled: $alarmScheduled');
-    } catch (e) {
-      print('[ReminderService] AndroidAlarmManager failed: $e');
-      alarmScheduled = false;
-    }
+        // Schedule the alarm with callback
+        alarmScheduled = await AndroidAlarmManager.oneShotAt(
+          reminder.nextTrigger!,
+          alarmId,
+          alarmCallback,
+          exact: true,
+          wakeup: true,
+          rescheduleOnReboot: true,
+          allowWhileIdle: true,
+        );
+        print('[ReminderService] AndroidAlarmManager scheduled: $alarmScheduled');
+      } catch (e) {
+        print('[ReminderService] AndroidAlarmManager failed: $e');
+        alarmScheduled = false;
+      }
 
-    // FALLBACK: Use zonedSchedule if AlarmManager fails
-    // This ensures notification shows even if TTS doesn't work
-    if (!alarmScheduled) {
-      print('[ReminderService] Using fallback: zonedSchedule (no TTS)');
-      await _scheduleFallbackNotification(reminder, notificationId);
+      // FALLBACK: Use zonedSchedule if AlarmManager fails
+      if (!alarmScheduled) {
+        print('[ReminderService] Using fallback: zonedSchedule (no TTS)');
+        await _scheduleFallbackNotification(reminder, notificationId);
+      } else {
+        // Also schedule fallback as backup - it will be cancelled if alarm fires
+        print('[ReminderService] Scheduling fallback notification as backup');
+        await _scheduleFallbackNotification(reminder, notificationId);
+      }
     } else {
-      // Also schedule fallback as backup - it will be cancelled if alarm fires
-      print('[ReminderService] Scheduling fallback notification as backup');
-      await _scheduleFallbackNotification(reminder, notificationId);
+      // iOS: Use zonedSchedule for scheduled notifications
+      print('[ReminderService] iOS: Using zonedSchedule');
+      await _scheduleIOSNotification(reminder, notificationId);
     }
 
     print('[ReminderService] ================================');
+  }
+
+  /// Schedule notification for iOS using zonedSchedule
+  Future<void> _scheduleIOSNotification(Reminder reminder, int notificationId) async {
+    final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      sound: 'default',
+      categoryIdentifier: reminder.type == ReminderType.recurring ? 'recurring_reminder' : 'one_time_reminder',
+    );
+
+    final notificationDetails = NotificationDetails(iOS: iosDetails);
+    final scheduledDate = tz.TZDateTime.from(reminder.nextTrigger!, tz.local);
+
+    await _notifications.zonedSchedule(
+      notificationId,
+      'Reminder: ${reminder.message}',
+      reminder.message,
+      scheduledDate,
+      notificationDetails,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: reminder.id,
+    );
+    print('[ReminderService] iOS notification scheduled for: $scheduledDate');
   }
 
   /// Fallback notification scheduling using flutter_local_notifications
@@ -768,27 +833,30 @@ class ReminderService {
 
       print('[ReminderService] Cancelling reminder: $reminderId (alarm: $alarmId)');
 
-      // FIRST: Cancel the AndroidAlarmManager alarm to prevent it from firing
-      // This must happen BEFORE deleting from DB to avoid race conditions
-      await AndroidAlarmManager.cancel(alarmId);
-      print('[ReminderService] Cancelled AndroidAlarmManager alarm: $alarmId');
+      // Cancel platform-specific alarm
+      if (Platform.isAndroid) {
+        // FIRST: Cancel the AndroidAlarmManager alarm to prevent it from firing
+        // This must happen BEFORE deleting from DB to avoid race conditions
+        await AndroidAlarmManager.cancel(alarmId);
+        print('[ReminderService] Cancelled AndroidAlarmManager alarm: $alarmId');
 
-      // Cancel the notification
-      await _notifications.cancel(notificationId);
+        // Clean up ALL alarm-related data from SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('alarm_$alarmId');
 
-      // Clean up ALL alarm-related data from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('alarm_$alarmId');
-
-      // Also clear active alarm data if it matches this alarm
-      final activeAlarmId = prefs.getInt('active_alarm_id');
-      if (activeAlarmId == alarmId) {
-        await prefs.remove('active_alarm_id');
-        await prefs.remove('active_alarm_message');
-        await prefs.remove('active_alarm_timestamp');
-        await prefs.remove('active_alarm_reminder_id');
-        print('[ReminderService] Cleared active alarm data for: $alarmId');
+        // Also clear active alarm data if it matches this alarm
+        final activeAlarmId = prefs.getInt('active_alarm_id');
+        if (activeAlarmId == alarmId) {
+          await prefs.remove('active_alarm_id');
+          await prefs.remove('active_alarm_message');
+          await prefs.remove('active_alarm_timestamp');
+          await prefs.remove('active_alarm_reminder_id');
+          print('[ReminderService] Cleared active alarm data for: $alarmId');
+        }
       }
+
+      // Cancel the notification (works on both platforms)
+      await _notifications.cancel(notificationId);
 
       // FINALLY: Delete from database
       await _dbService.deleteReminder(reminderId);
@@ -821,7 +889,6 @@ class ReminderService {
   Future<bool> cancelAllReminders(String userId) async {
     try {
       final reminders = await _dbService.getActiveRemindersByUserId(userId);
-      final prefs = await SharedPreferences.getInstance();
 
       print('[ReminderService] Cancelling ${reminders.length} reminders for user: $userId');
 
@@ -829,27 +896,32 @@ class ReminderService {
         final alarmId = reminder.id.hashCode.abs() % 100000;
         final notificationId = _baseNotificationId + alarmId % 10000;
 
-        // Cancel AndroidAlarmManager alarm FIRST
-        await AndroidAlarmManager.cancel(alarmId);
+        // Cancel platform-specific alarm
+        if (Platform.isAndroid) {
+          await AndroidAlarmManager.cancel(alarmId);
 
-        // Cancel notification
+          // Clean up alarm data from SharedPreferences
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('alarm_$alarmId');
+        }
+
+        // Cancel notification (works on both platforms)
         await _notifications.cancel(notificationId);
-
-        // Clean up alarm data from SharedPreferences
-        await prefs.remove('alarm_$alarmId');
 
         print('[ReminderService] Cancelled reminder: ${reminder.message} (alarm: $alarmId)');
       }
 
-      // Clear any active alarm data for this user
-      final activeAlarmReminderId = prefs.getString('active_alarm_reminder_id');
-      if (activeAlarmReminderId != null) {
-        // Check if this reminder belongs to the user (it should since we're deleting all)
-        await prefs.remove('active_alarm_id');
-        await prefs.remove('active_alarm_message');
-        await prefs.remove('active_alarm_timestamp');
-        await prefs.remove('active_alarm_reminder_id');
-        print('[ReminderService] Cleared active alarm data');
+      // Clear any active alarm data (Android only)
+      if (Platform.isAndroid) {
+        final prefs = await SharedPreferences.getInstance();
+        final activeAlarmReminderId = prefs.getString('active_alarm_reminder_id');
+        if (activeAlarmReminderId != null) {
+          await prefs.remove('active_alarm_id');
+          await prefs.remove('active_alarm_message');
+          await prefs.remove('active_alarm_timestamp');
+          await prefs.remove('active_alarm_reminder_id');
+          print('[ReminderService] Cleared active alarm data');
+        }
       }
 
       await _dbService.deleteAllRemindersForUser(userId);
@@ -900,7 +972,15 @@ class ReminderService {
 
       // Cancel any scheduled notifications/alarms
       final alarmId = reminderId.hashCode.abs() % 100000;
-      await _cleanupAlarmData(alarmId);
+      final notificationId = _baseNotificationId + alarmId % 10000;
+
+      // Cancel notification on both platforms
+      await _notifications.cancel(notificationId);
+
+      // Android-specific cleanup
+      if (Platform.isAndroid) {
+        await _cleanupAlarmData(alarmId);
+      }
 
       print('[ReminderService] Marked reminder as triggered: ${reminder.message}');
       return true;

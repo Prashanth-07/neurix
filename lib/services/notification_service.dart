@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -101,19 +102,22 @@ class NotificationService {
   }
 
   Future<void> _createNotificationChannel() async {
-    const androidChannel = AndroidNotificationChannel(
-      _channelId,
-      _channelName,
-      description: _channelDescription,
-      importance: Importance.low, // Low importance for persistent notification
-      playSound: false,
-      enableVibration: false,
-    );
+    // Only create notification channel on Android
+    if (Platform.isAndroid) {
+      const androidChannel = AndroidNotificationChannel(
+        _channelId,
+        _channelName,
+        description: _channelDescription,
+        importance: Importance.low, // Low importance for persistent notification
+        playSound: false,
+        enableVibration: false,
+      );
 
-    await _notifications
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(androidChannel);
+      await _notifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(androidChannel);
+    }
   }
 
   void _onNotificationResponse(NotificationResponse response) {
@@ -286,6 +290,12 @@ class NotificationService {
   }) async {
     if (!_isInitialized) await initialize();
 
+    // Persistent notification is Android-only feature
+    // iOS doesn't support persistent notifications in the same way
+    if (!Platform.isAndroid) {
+      return;
+    }
+
     String currentTitle = title;
     String currentBody = body;
 
@@ -356,6 +366,7 @@ class NotificationService {
   Future<void> showResponseNotification(String response) async {
     if (!_isInitialized) await initialize();
 
+    // Response notifications work on both platforms
     final androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -368,7 +379,16 @@ class NotificationService {
       colorized: true,
     );
 
-    final notificationDetails = NotificationDetails(android: androidDetails);
+    final iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    final notificationDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
 
     await _notifications.show(
       _voiceNotificationId + 1, // Different ID for response
@@ -377,9 +397,11 @@ class NotificationService {
       notificationDetails,
     );
 
-    // Also show the main control notification again
-    await Future.delayed(const Duration(milliseconds: 500));
-    await showVoiceNotification();
+    // Also show the main control notification again (Android only)
+    if (Platform.isAndroid) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      await showVoiceNotification();
+    }
   }
 
   /// Cancel the voice notification
@@ -394,21 +416,37 @@ class NotificationService {
 
   /// Check if notifications are enabled
   Future<bool> areNotificationsEnabled() async {
-    final androidImpl = _notifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (androidImpl != null) {
-      return await androidImpl.areNotificationsEnabled() ?? false;
+    if (Platform.isAndroid) {
+      final androidImpl = _notifications.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImpl != null) {
+        return await androidImpl.areNotificationsEnabled() ?? false;
+      }
     }
+    // iOS permissions are handled during initialization
     return true;
   }
 
   /// Request notification permission
   Future<bool> requestPermission() async {
-    final androidImpl = _notifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (androidImpl != null) {
-      final granted = await androidImpl.requestNotificationsPermission();
-      return granted ?? false;
+    if (Platform.isAndroid) {
+      final androidImpl = _notifications.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (androidImpl != null) {
+        final granted = await androidImpl.requestNotificationsPermission();
+        return granted ?? false;
+      }
+    } else if (Platform.isIOS) {
+      final iosImpl = _notifications.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      if (iosImpl != null) {
+        final granted = await iosImpl.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+        return granted ?? false;
+      }
     }
     return true;
   }
