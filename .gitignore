@@ -48,6 +48,12 @@ app.*.map.json
 .env
 .env.*
 
+# Keystore and signing config (IMPORTANT: Never commit these!)
+android/key.properties
+android/app/keystore/
+*.jks
+*.keystore
+
 # Windows reserved file names
 nul
 NUL

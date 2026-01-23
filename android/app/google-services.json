@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "1026337369775-qtl838912go7t9bl4906ir5e4q598c13.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.bunny.neuro",
+            "certificate_hash": "6d831d087054277bcba504dfae3bf181a3347b52"
+          }
+        },
+        {
           "client_id": "1026337369775-v20ahn9vk6gpnfffd5ev8e9njosufo02.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -37,6 +45,13 @@
             {
               "client_id": "1026337369775-9bo8n6tllbrnthuhneiofagt2v5h37jh.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "1026337369775-7je692i60um8ns0vuc28q7j34bp03t29.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.bunny.neuro"
+              }
             }
           ]
         }

@@ -8,6 +8,7 @@ import '../services/local_db_service.dart';
 import '../services/embedding_service.dart';
 import '../services/llm_service.dart';
 import '../services/reminder_service.dart';
+import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 import '../models/memory_model.dart';
 import '../models/reminder_model.dart';
@@ -15,6 +16,7 @@ import '../utils/constants.dart';
 import '../widgets/confirmation_dialog.dart';
 import 'all_memories_screen.dart';
 import 'reminders_screen.dart';
+import 'upgrade_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -26,6 +28,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
   final ReminderService _reminderService = ReminderService();
+  final SubscriptionService _subscriptionService = SubscriptionService();
 
   // Speech recognition
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -36,6 +39,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _statusText = 'Tap to speak';
   bool _isProcessing = false;
   bool _hasProcessedCurrentInput = false; // Prevents duplicate processing
+  bool _pendingMicFromNotification = false; // Flag to start listening when app resumes
+  bool _listeningFromNotification = false; // Flag to suppress TTS error when from notification
 
   @override
   void initState() {
@@ -43,8 +48,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _setupNotificationService();
     _initializeReminderService();
+    _initializeSubscriptionService();
     _initSpeech();
     _initTts();
+  }
+
+  Future<void> _initializeSubscriptionService() async {
+    await _subscriptionService.initialize();
   }
 
   Future<void> _initSpeech() async {
@@ -85,17 +95,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             setState(() {
               _isListening = false;
               _statusText = 'Tap to speak';
+              _listeningFromNotification = false;
             });
           }
         }
       },
       onError: (error) {
         print('[HomeScreen] Speech error: $error');
+        final wasFromNotification = _listeningFromNotification;
         setState(() {
           _isListening = false;
           _statusText = 'Tap to speak';
+          _listeningFromNotification = false;
         });
-        _speak('Sorry, I couldn\'t hear you. Please try again.');
+        // Only speak error if not triggered from notification (to avoid TTS being captured)
+        if (!wasFromNotification) {
+          _speak('Sorry, I couldn\'t hear you. Please try again.');
+        }
       },
     );
     print('[HomeScreen] Speech initialized: $_speechInitialized');
@@ -133,6 +149,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _transcribedText = '';
       _statusText = 'Listening...';
       _hasProcessedCurrentInput = false; // Reset for new input
+      _listeningFromNotification = false; // Ensure flag is false for on-screen mic
     });
 
     await _speech.listen(
@@ -308,6 +325,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       case AppLifecycleState.resumed:
         // App came to foreground - ensure notification is visible
         _notificationService.showVoiceNotification();
+
+        // Check if we have a pending mic press from notification
+        if (_pendingMicFromNotification) {
+          print('[HomeScreen] App resumed with pending mic press, starting listening');
+          _pendingMicFromNotification = false;
+          // Longer delay to ensure audio system is fully ready after background-to-foreground transition
+          Future.delayed(const Duration(milliseconds: 800), () {
+            if (mounted && !_isListening && !_isProcessing) {
+              _startListeningFromNotification();
+            }
+          });
+        }
         break;
       case AppLifecycleState.paused:
         // App went to background - notification should persist (ongoing: true)
@@ -344,50 +373,85 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // Set up voice input handler - processes voice input from notification
-    _notificationService.onVoiceInput = _handleVoiceInput;
+    // Set up mic button handler - triggers speech recognition when notification mic is pressed
+    _notificationService.onMicPressed = _handleNotificationMicPress;
 
     // Show the persistent voice control notification
     await _notificationService.showVoiceNotification();
     print('[HomeScreen] Notification service initialized');
   }
 
-  /// Handle voice input from notification (same flow as mic button)
-  Future<void> _handleVoiceInput(String action, String text) async {
-    print('[NOTIFICATION] Action: $action, Text: "$text"');
+  /// Handle mic button press from notification - triggers speech recognition
+  void _handleNotificationMicPress() {
+    print('[NOTIFICATION] Mic button pressed from notification');
+    // Set flag to start listening when app is fully resumed
+    // This is needed because the app may still be paused when this is called
+    _pendingMicFromNotification = true;
 
-    try {
-      String response;
-
-      if (action == 'speak') {
-        // Use same LLM flow as mic button
-        final llmService = LLMService();
-        final intent = await llmService.detectIntent(text);
-
-        if (intent == 'save') {
-          response = await _handleAddMemory(text);
-        } else if (intent == 'search') {
-          response = await _handleSearchMemory(text);
-        } else if (intent == 'reminder') {
-          response = await _handleCreateReminder(text);
-        } else if (intent == 'cancel_reminder') {
-          response = await _handleCancelReminder(text);
-        } else {
-          response = 'I didn\'t understand. Can you please be more clear?';
-        }
-      } else if (action == 'add_memory') {
-        response = await _handleAddMemory(text);
-      } else if (action == 'search') {
-        response = await _handleSearchMemory(text);
-      } else {
-        response = 'I didn\'t understand that action.';
+    // If app is already in foreground and active, start listening immediately
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      print('[NOTIFICATION] App already resumed, starting listening');
+      _pendingMicFromNotification = false;
+      if (!_isListening && !_isProcessing) {
+        // Use small delay even when already resumed to ensure audio is ready
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && !_isListening && !_isProcessing) {
+            _startListeningFromNotification();
+          }
+        });
       }
-
-      await _notificationService.speakResponse(response);
-    } catch (e) {
-      print('[NOTIFICATION] Error: $e');
-      await _notificationService.speakResponse('Sorry, something went wrong.');
+    } else {
+      print('[NOTIFICATION] App not resumed yet, will start listening on resume');
     }
+  }
+
+  /// Start listening from notification - silent error handling (no TTS on error)
+  Future<void> _startListeningFromNotification() async {
+    print('[HomeScreen] ========================================');
+    print('[HomeScreen] === STARTING LISTENING (from notification) ===');
+    print('[HomeScreen] ========================================');
+
+    if (!_speechInitialized) {
+      print('[HomeScreen] Speech not initialized, initializing...');
+      await _initSpeech();
+    }
+
+    if (!_speechInitialized) {
+      print('[HomeScreen] Speech recognition not available!');
+      // Don't speak error - just reset state silently
+      return;
+    }
+
+    print('[HomeScreen] Starting speech recognition...');
+    setState(() {
+      _isListening = true;
+      _transcribedText = '';
+      _statusText = 'Listening...';
+      _hasProcessedCurrentInput = false;
+      _listeningFromNotification = true; // Set flag to suppress TTS error
+    });
+
+    await _speech.listen(
+      onResult: (result) {
+        print('[HomeScreen] Speech result - words: "${result.recognizedWords}", final: ${result.finalResult}');
+        setState(() {
+          _transcribedText = result.recognizedWords;
+          if (_transcribedText.isNotEmpty) {
+            _statusText = _transcribedText;
+          }
+        });
+
+        if (result.finalResult && result.recognizedWords.isNotEmpty) {
+          print('[HomeScreen] Final result received, stopping and processing...');
+          _listeningFromNotification = false; // Reset flag
+          _speech.stop();
+          _processVoiceInput();
+        }
+      },
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 3),
+      localeId: 'en_US',
+    );
   }
 
   /// SAVE MEMORY: Save raw text + embedding to database (No extra LLM call)
@@ -397,6 +461,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final userId = authService.currentUser?.uid ?? 'anonymous';
 
       final localDbService = LocalDbService();
+
+      // Check subscription limits
+      final currentCount = await localDbService.getMemoryCount(userId);
+      if (!_subscriptionService.canAddMemory(currentCount)) {
+        print('[SAVE] Memory limit reached: $currentCount/${SubscriptionLimits.freeMemories}');
+        // Show upgrade screen
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const UpgradeScreen(limitReachedType: 'memory'),
+            ),
+          );
+        }
+        return 'You\'ve reached the free memory limit. Upgrade to Pro for unlimited memories!';
+      }
+
       final embeddingService = EmbeddingService();
       final llmService = LLMService();
 
@@ -473,6 +554,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       final authService = Provider.of<AuthService>(context, listen: false);
       final userId = authService.currentUser?.uid ?? 'anonymous';
+
+      final localDbService = LocalDbService();
+
+      // Check subscription limits
+      final currentCount = await localDbService.getReminderCount(userId);
+      if (!_subscriptionService.canAddReminder(currentCount)) {
+        print('[REMINDER] Reminder limit reached: $currentCount/${SubscriptionLimits.freeReminders}');
+        // Show upgrade screen
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const UpgradeScreen(limitReachedType: 'reminder'),
+            ),
+          );
+        }
+        return 'You\'ve reached the free reminder limit. Upgrade to Pro for unlimited reminders!';
+      }
 
       // LLM Call 3: Parse reminder details
       final llmService = LLMService();
@@ -718,6 +817,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: AppSizes.paddingLarge),
 
+              // Subscription Status Card
+              _buildSubscriptionCard(),
+              const SizedBox(height: AppSizes.paddingMedium),
+
               // All Memories Card
               FutureBuilder<List<Memory>>(
                 future: LocalDbService().getMemoriesByUserId(userId),
@@ -725,9 +828,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   final memories = snapshot.data ?? [];
                   final count = memories.length;
 
-                  return _buildNavigationCard(
+                  return _buildNavigationCardWithLimit(
                     title: 'All Memories',
                     count: count,
+                    limit: _subscriptionService.memoryLimit,
                     icon: Icons.lightbulb_outline,
                     iconColor: Colors.amber,
                     onTap: () {
@@ -750,9 +854,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   final reminders = snapshot.data ?? [];
                   final count = reminders.length;
 
-                  return _buildNavigationCard(
+                  return _buildNavigationCardWithLimit(
                     title: 'All Reminders',
                     count: count,
+                    limit: _subscriptionService.reminderLimit,
                     icon: Icons.notifications_outlined,
                     iconColor: Colors.deepPurple,
                     onTap: () {
@@ -766,6 +871,176 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   );
                 },
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionCard() {
+    final isPro = _subscriptionService.isPro;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+      ),
+      color: isPro ? Colors.green.withOpacity(0.1) : null,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const UpgradeScreen(),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.paddingMedium),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: isPro
+                      ? Colors.green.withOpacity(0.2)
+                      : Colors.amber.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  isPro ? Icons.workspace_premium : Icons.star_outline,
+                  color: isPro ? Colors.green : Colors.amber,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: AppSizes.paddingMedium),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPro ? 'Neurix Pro' : 'Free Plan',
+                      style: AppTextStyles.subheading.copyWith(
+                        color: isPro ? Colors.green : null,
+                      ),
+                    ),
+                    Text(
+                      isPro
+                          ? 'Unlimited memories & reminders'
+                          : 'Tap to upgrade for unlimited',
+                      style: AppTextStyles.caption,
+                    ),
+                  ],
+                ),
+              ),
+              if (!isPro)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text(
+                    'UPGRADE',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.check_circle,
+                  color: Colors.green,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavigationCardWithLimit({
+    required String title,
+    required int count,
+    required int limit,
+    required IconData icon,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    final isUnlimited = limit == -1;
+    final isAtLimit = !isUnlimited && count >= limit;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.paddingMedium),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: AppSizes.paddingMedium),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTextStyles.subheading,
+                    ),
+                    Text(
+                      isUnlimited
+                          ? '$count items'
+                          : '$count / $limit',
+                      style: AppTextStyles.caption.copyWith(
+                        color: isAtLimit ? Colors.orange : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isAtLimit)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'FULL',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              else
+                Icon(
+                  Icons.chevron_right,
+                  color: Colors.grey[400],
+                ),
             ],
           ),
         ),

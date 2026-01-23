@@ -1,9 +1,64 @@
-import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart' hide NotificationVisibility;
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+
+// The callback function should always be a top-level function.
+@pragma('vm:entry-point')
+void startCallback() {
+  // The setTaskHandler function must be called to handle the task in the background.
+  FlutterForegroundTask.setTaskHandler(VoiceTaskHandler());
+}
+
+class VoiceTaskHandler extends TaskHandler {
+  @override
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    print('[VoiceTaskHandler] Foreground service started');
+  }
+
+  @override
+  void onRepeatEvent(DateTime timestamp) {
+    // Keep alive - no action needed
+  }
+
+  @override
+  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    print('[VoiceTaskHandler] Foreground service stopped (timeout: $isTimeout)');
+  }
+
+  @override
+  void onReceiveData(Object data) {
+    print('[VoiceTaskHandler] Received data: $data');
+  }
+
+  @override
+  void onNotificationButtonPressed(String id) {
+    print('[VoiceTaskHandler] Notification button pressed: $id');
+    // Bring app to foreground and trigger mic
+    FlutterForegroundTask.launchApp('/');
+    Future.delayed(const Duration(milliseconds: 100), () {
+      FlutterForegroundTask.sendDataToMain('mic');
+    });
+  }
+
+  @override
+  void onNotificationPressed() {
+    print('[VoiceTaskHandler] Notification tapped - launching app');
+    // User tapped the notification body - bring app to foreground and start listening
+    FlutterForegroundTask.launchApp('/');
+    Future.delayed(const Duration(milliseconds: 100), () {
+      FlutterForegroundTask.sendDataToMain('mic');
+    });
+  }
+
+  @override
+  void onNotificationDismissed() {
+    print('[VoiceTaskHandler] Notification dismissed - restarting');
+    // Restart the notification when user dismisses it
+    FlutterForegroundTask.sendDataToMain('notification_dismissed');
+  }
+}
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -14,30 +69,24 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   final FlutterTts _tts = FlutterTts();
-  final stt.SpeechToText _speech = stt.SpeechToText();
-  bool _speechInitialized = false;
-  bool _isListening = false;
-  String _currentMode = '';
-  String _transcribedText = '';
-  Timer? _silenceTimer;
-  DateTime? _lastSpeechTime;
 
   bool _isInitialized = false;
+  bool _foregroundServiceRunning = false;
 
   // Notification IDs
-  static const int _voiceNotificationId = 1;
+  static const int _responseNotificationId = 2;
   static const String _channelId = 'neurix_voice';
   static const String _channelName = 'Neurix Voice';
   static const String _channelDescription = 'Voice interaction controls';
 
-  // Callback for notification actions - receives action and transcribed text
-  Function(String action, String text)? onVoiceInput;
+  // Callback for notification mic button press - triggers speech in HomeScreen
+  VoidCallback? onMicPressed;
 
   /// Initialize the notification service
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    // Android settings
+    // Android settings for local notifications (used for responses)
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
 
     // iOS settings
@@ -58,17 +107,63 @@ class NotificationService {
       onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
     );
 
-    // Create notification channel for Android
-    await _createNotificationChannel();
-
     // Initialize TTS
     await _initTts();
 
-    // Initialize speech recognition
-    await _initSpeech();
+    // Initialize foreground task (Android only)
+    if (Platform.isAndroid) {
+      _initForegroundTask();
+      // Initialize communication port and listen for data from foreground service
+      FlutterForegroundTask.initCommunicationPort();
+      FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
+    }
 
     _isInitialized = true;
     print('[NotificationService] Initialized');
+  }
+
+  void _initForegroundTask() {
+    FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: _channelId,
+        channelName: _channelName,
+        channelDescription: _channelDescription,
+        channelImportance: NotificationChannelImportance.LOW,
+        priority: NotificationPriority.LOW,
+        visibility: NotificationVisibility.VISIBILITY_PUBLIC,
+      ),
+      iosNotificationOptions: const IOSNotificationOptions(
+        showNotification: false, // iOS doesn't support persistent notifications
+      ),
+      foregroundTaskOptions: ForegroundTaskOptions(
+        eventAction: ForegroundTaskEventAction.nothing(),
+        autoRunOnBoot: false,
+        autoRunOnMyPackageReplaced: false,
+        allowWakeLock: true,
+        allowWifiLock: false,
+      ),
+    );
+  }
+
+  void _onReceiveTaskData(Object data) {
+    print('[NotificationService] Received from foreground service: $data');
+    if (data == 'mic_pressed' || data == 'mic') {
+      // Trigger HomeScreen's speech recognition via callback
+      print('[NotificationService] Triggering mic callback');
+      onMicPressed?.call();
+    } else if (data == 'notification_dismissed') {
+      // Restart the notification when user dismisses it
+      _restartNotification();
+    }
+  }
+
+  Future<void> _restartNotification() async {
+    print('[NotificationService] Restarting notification after dismiss');
+    // Update the service to show the notification again
+    await FlutterForegroundTask.updateService(
+      notificationTitle: 'Neurix',
+      notificationText: 'Tap to speak',
+    );
   }
 
   Future<void> _initTts() async {
@@ -77,300 +172,125 @@ class NotificationService {
     await _tts.setVolume(1.0);
   }
 
-  Future<void> _initSpeech() async {
-    _speechInitialized = await _speech.initialize(
-      onStatus: (status) {
-        print('[NotificationService] Speech status: $status');
-        if (status == 'done' || status == 'notListening') {
-          if (_isListening) {
-            _silenceTimer?.cancel();
-            if (_transcribedText.isNotEmpty) {
-              _processVoiceInput();
-            } else {
-              _resetToIdle();
-            }
-          }
-        }
-      },
-      onError: (error) {
-        print('[NotificationService] Speech error: $error');
-        _silenceTimer?.cancel();
-        _resetToIdle();
-      },
-    );
-    print('[NotificationService] Speech initialized: $_speechInitialized');
-  }
-
-  Future<void> _createNotificationChannel() async {
-    // Only create notification channel on Android
-    if (Platform.isAndroid) {
-      const androidChannel = AndroidNotificationChannel(
-        _channelId,
-        _channelName,
-        description: _channelDescription,
-        importance: Importance.low, // Low importance for persistent notification
-        playSound: false,
-        enableVibration: false,
-      );
-
-      await _notifications
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(androidChannel);
-    }
-  }
-
   void _onNotificationResponse(NotificationResponse response) {
-    print('[NotificationService] Notification response - actionId: ${response.actionId}, notificationResponseType: ${response.notificationResponseType}');
-
-    // If an action button was pressed
-    if (response.actionId != null && response.actionId!.isNotEmpty) {
-      _handleAction(response.actionId!);
-    }
-    // If notification body was tapped (no action id), start in speak mode
-    else if (response.notificationResponseType == NotificationResponseType.selectedNotification) {
-      _handleAction('speak');
-    }
+    print('[NotificationService] Notification response - actionId: ${response.actionId}');
   }
 
   @pragma('vm:entry-point')
   static void _onBackgroundNotificationResponse(NotificationResponse response) {
     print('[NotificationService] Background action: ${response.actionId}');
-    // Background actions will be handled when app resumes
   }
 
-  /// Handle notification action - start listening
-  Future<void> _handleAction(String action) async {
-    print('[NotificationService] Handling action: $action');
+  Future<void> _updateForegroundNotification({
+    bool isListening = false,
+    bool isProcessing = false,
+  }) async {
+    if (!Platform.isAndroid || !_foregroundServiceRunning) return;
 
-    if (_isListening) {
-      print('[NotificationService] Already listening, ignoring action');
-      return;
+    String title = 'Neurix';
+    String body = 'Tap mic to speak';
+
+    if (isListening) {
+      title = 'Listening...';
+      body = 'Speak now';
+    } else if (isProcessing) {
+      title = 'Processing...';
+      body = 'Please wait';
     }
 
-    _currentMode = action;
-    await _startListening();
-  }
-
-  Future<void> _startListening() async {
-    if (!_speechInitialized) {
-      await _initSpeech();
-    }
-
-    if (!_speechInitialized) {
-      print('[NotificationService] Speech not available');
-      await _tts.speak('Speech recognition is not available');
-      return;
-    }
-
-    _isListening = true;
-    _transcribedText = '';
-    _lastSpeechTime = DateTime.now();
-
-    // Update notification to show listening state
-    await showVoiceNotification(isListening: true);
-
-    // Start silence detection timer
-    _startSilenceDetection();
-
-    await _speech.listen(
-      onResult: (result) {
-        _transcribedText = result.recognizedWords;
-        if (result.recognizedWords.isNotEmpty) {
-          _lastSpeechTime = DateTime.now();
-        }
-        // Update notification with transcribed text
-        _updateListeningNotification(_transcribedText);
-
-        if (result.finalResult && result.recognizedWords.isNotEmpty) {
-          _silenceTimer?.cancel();
-          _speech.stop();
-          _processVoiceInput();
-        }
-      },
-      listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 5),
-      localeId: 'en_US',
+    await FlutterForegroundTask.updateService(
+      notificationTitle: title,
+      notificationText: body,
     );
   }
 
-  void _startSilenceDetection() {
-    _silenceTimer?.cancel();
-    _silenceTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!_isListening) {
-        timer.cancel();
-        return;
-      }
-
-      final now = DateTime.now();
-      final silenceDuration = now.difference(_lastSpeechTime ?? now);
-
-      if (silenceDuration.inSeconds >= 5) {
-        timer.cancel();
-        _speech.stop();
-
-        if (_transcribedText.isNotEmpty) {
-          _processVoiceInput();
-        } else {
-          _resetToIdle();
-        }
-      }
-    });
-  }
-
-  Future<void> _updateListeningNotification(String text) async {
-    final displayText = text.isEmpty ? 'Listening...' : text;
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      ongoing: true,
-      autoCancel: false,
-      showWhen: false,
-      color: Colors.red,
-      colorized: true,
-    );
-
-    final notificationDetails = NotificationDetails(android: androidDetails);
-
-    await _notifications.show(
-      _voiceNotificationId,
-      'Listening...',
-      displayText,
-      notificationDetails,
-    );
-  }
-
-  Future<void> _processVoiceInput() async {
-    _isListening = false;
-
-    // Show processing notification
-    await showVoiceNotification(isProcessing: true);
-
-    print('[NotificationService] Processing: $_currentMode - $_transcribedText');
-
-    // Call the callback to process the voice input
-    if (onVoiceInput != null && _transcribedText.isNotEmpty) {
-      onVoiceInput!(_currentMode, _transcribedText);
-    } else {
-      await _resetToIdle();
-    }
-  }
-
-  Future<void> _resetToIdle() async {
-    _isListening = false;
-    _transcribedText = '';
-    _currentMode = '';
-    _silenceTimer?.cancel();
-    await showVoiceNotification();
-  }
-
-  /// Speak response and reset to idle
+  /// Speak response
   Future<void> speakResponse(String response) async {
-    // Show response in notification
+    // Show response in a separate notification
     await showResponseNotification(response);
 
     // Speak the response
     await _tts.speak(response);
-
-    // Wait a bit then reset to idle
-    await Future.delayed(const Duration(seconds: 2));
-    await showVoiceNotification();
   }
 
-  /// Show the voice control notification
+  /// Start the persistent foreground service with mic button
+  Future<void> startForegroundService() async {
+    if (!_isInitialized) await initialize();
+
+    // Foreground service is Android-only
+    if (!Platform.isAndroid) return;
+
+    if (_foregroundServiceRunning) {
+      print('[NotificationService] Foreground service already running');
+      return;
+    }
+
+    // Request permission for notification (Android 13+)
+    final notificationPermission = await FlutterForegroundTask.checkNotificationPermission();
+    if (notificationPermission != NotificationPermission.granted) {
+      await FlutterForegroundTask.requestNotificationPermission();
+    }
+
+    // Start the foreground service
+    // No action buttons - tapping the notification itself will open app and start listening
+    final result = await FlutterForegroundTask.startService(
+      notificationTitle: 'Neurix',
+      notificationText: 'Tap to speak',
+      callback: startCallback,
+    );
+
+    _foregroundServiceRunning = result is ServiceRequestSuccess;
+    print('[NotificationService] Foreground service started: $_foregroundServiceRunning');
+  }
+
+  /// Stop the foreground service
+  Future<void> stopForegroundService() async {
+    if (!Platform.isAndroid || !_foregroundServiceRunning) return;
+
+    await FlutterForegroundTask.stopService();
+    _foregroundServiceRunning = false;
+    print('[NotificationService] Foreground service stopped');
+  }
+
+  /// Legacy method for compatibility - now starts foreground service
   Future<void> showVoiceNotification({
-    String title = 'Neurix Voice',
-    String body = 'Tap to speak or use actions below',
+    String title = 'Neurix',
+    String body = 'Tap mic to speak',
     bool isListening = false,
     bool isProcessing = false,
   }) async {
     if (!_isInitialized) await initialize();
 
-    // Persistent notification is Android-only feature
-    // iOS doesn't support persistent notifications in the same way
-    if (!Platform.isAndroid) {
-      return;
+    if (!Platform.isAndroid) return;
+
+    if (!_foregroundServiceRunning) {
+      await startForegroundService();
+    } else {
+      await _updateForegroundNotification(
+        isListening: isListening,
+        isProcessing: isProcessing,
+      );
     }
-
-    String currentTitle = title;
-    String currentBody = body;
-
-    if (isListening) {
-      currentTitle = 'Listening...';
-      currentBody = 'Speak now to add a memory or search';
-    } else if (isProcessing) {
-      currentTitle = 'Processing...';
-      currentBody = 'Please wait';
-    }
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.low,
-      priority: Priority.low,
-      ongoing: true, // Makes it persistent
-      autoCancel: false,
-      showWhen: false,
-      color: Colors.deepPurple,
-      colorized: true,
-      actions: isListening || isProcessing
-          ? null // No actions while listening/processing
-          : [
-              const AndroidNotificationAction(
-                'speak',
-                '🎤 Speak',
-                showsUserInterface: true, // Need app foreground for microphone
-                cancelNotification: false,
-              ),
-              const AndroidNotificationAction(
-                'add_memory',
-                '💾 Add Memory',
-                showsUserInterface: true,
-                cancelNotification: false,
-              ),
-              const AndroidNotificationAction(
-                'search',
-                '🔍 Search',
-                showsUserInterface: true,
-                cancelNotification: false,
-              ),
-            ],
-    );
-
-    final notificationDetails = NotificationDetails(android: androidDetails);
-
-    await _notifications.show(
-      _voiceNotificationId,
-      currentTitle,
-      currentBody,
-      notificationDetails,
-    );
   }
 
   /// Update notification to show listening state
   Future<void> showListeningNotification() async {
-    await showVoiceNotification(isListening: true);
+    await _updateForegroundNotification(isListening: true);
   }
 
   /// Update notification to show processing state
   Future<void> showProcessingNotification() async {
-    await showVoiceNotification(isProcessing: true);
+    await _updateForegroundNotification(isProcessing: true);
   }
 
-  /// Update notification to show response
+  /// Show a response notification (separate from persistent notification)
   Future<void> showResponseNotification(String response) async {
     if (!_isInitialized) await initialize();
 
-    // Response notifications work on both platforms
     final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
+      '${_channelId}_response',
+      'Neurix Responses',
+      channelDescription: 'Neurix response notifications',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       ongoing: false,
@@ -391,51 +311,38 @@ class NotificationService {
     );
 
     await _notifications.show(
-      _voiceNotificationId + 1, // Different ID for response
+      _responseNotificationId,
       'Neurix Response',
       response,
       notificationDetails,
     );
-
-    // Also show the main control notification again (Android only)
-    if (Platform.isAndroid) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      await showVoiceNotification();
-    }
   }
 
-  /// Cancel the voice notification
+  /// Cancel the voice notification / stop foreground service
   Future<void> cancelVoiceNotification() async {
-    await _notifications.cancel(_voiceNotificationId);
+    await stopForegroundService();
   }
 
   /// Cancel all notifications
   Future<void> cancelAllNotifications() async {
+    await stopForegroundService();
     await _notifications.cancelAll();
   }
 
   /// Check if notifications are enabled
   Future<bool> areNotificationsEnabled() async {
     if (Platform.isAndroid) {
-      final androidImpl = _notifications.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-      if (androidImpl != null) {
-        return await androidImpl.areNotificationsEnabled() ?? false;
-      }
+      final permission = await FlutterForegroundTask.checkNotificationPermission();
+      return permission == NotificationPermission.granted;
     }
-    // iOS permissions are handled during initialization
     return true;
   }
 
   /// Request notification permission
   Future<bool> requestPermission() async {
     if (Platform.isAndroid) {
-      final androidImpl = _notifications.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-      if (androidImpl != null) {
-        final granted = await androidImpl.requestNotificationsPermission();
-        return granted ?? false;
-      }
+      final permission = await FlutterForegroundTask.requestNotificationPermission();
+      return permission == NotificationPermission.granted;
     } else if (Platform.isIOS) {
       final iosImpl = _notifications.resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin>();
@@ -449,5 +356,10 @@ class NotificationService {
       }
     }
     return true;
+  }
+
+  /// Dispose resources
+  void dispose() {
+    FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
   }
 }
