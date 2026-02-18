@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/constants.dart';
 
 class SlideToStop extends StatefulWidget {
   final VoidCallback onSlideComplete;
@@ -23,14 +24,14 @@ class _SlideToStopState extends State<SlideToStop> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        _maxDragDistance = constraints.maxWidth - 70; // 70 = thumb width + padding
+        _maxDragDistance = constraints.maxWidth - 70;
 
         return Container(
           height: 60,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
+            color: AppColors.glass,
             borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: Colors.white.withOpacity(0.3)),
+            border: Border.all(color: AppColors.glassBorder),
           ),
           child: Stack(
             children: [
@@ -39,7 +40,7 @@ class _SlideToStopState extends State<SlideToStop> {
                 child: Text(
                   widget.label,
                   style: const TextStyle(
-                    color: Colors.white70,
+                    color: AppColors.textSecondary,
                     fontSize: 16,
                     fontWeight: FontWeight.w500,
                   ),
@@ -56,11 +57,13 @@ class _SlideToStopState extends State<SlideToStop> {
                     width: 50,
                     height: 50,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      gradient: const LinearGradient(
+                        colors: [AppColors.primary, AppColors.primaryLight],
+                      ),
                       borderRadius: BorderRadius.circular(25),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                          color: AppColors.primary.withOpacity(0.3),
                           blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
@@ -68,7 +71,7 @@ class _SlideToStopState extends State<SlideToStop> {
                     ),
                     child: const Icon(
                       Icons.chevron_right,
-                      color: Colors.red,
+                      color: Colors.white,
                       size: 30,
                     ),
                   ),
@@ -93,7 +96,6 @@ class _SlideToStopState extends State<SlideToStop> {
   void _onDragEnd(DragEndDetails details) {
     if (_isCompleted) return;
 
-    // Check if dragged far enough (80% of the way)
     if (_dragPosition >= _maxDragDistance * 0.8) {
       setState(() {
         _isCompleted = true;
@@ -101,7 +103,6 @@ class _SlideToStopState extends State<SlideToStop> {
       });
       widget.onSlideComplete();
     } else {
-      // Snap back to start
       setState(() {
         _dragPosition = 0;
       });

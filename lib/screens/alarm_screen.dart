@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_show_when_locked/flutter_show_when_locked.dart';
 import '../models/reminder_model.dart';
 import '../services/reminder_service.dart';
+import '../utils/constants.dart';
 import '../widgets/slide_to_stop.dart';
 
 class AlarmScreen extends StatefulWidget {
@@ -238,13 +239,14 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
       canPop: false, // Prevent back button from closing
       child: Scaffold(
         body: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Color(0xFF1a237e), // Deep indigo
-                Color(0xFF0d47a1), // Deep blue
+                AppColors.background,
+                AppColors.primary.withOpacity(0.15),
+                AppColors.background,
               ],
             ),
           ),
@@ -258,13 +260,20 @@ class _AlarmScreenState extends State<AlarmScreen> with WidgetsBindingObserver {
                   width: 120,
                   height: 120,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
+                    color: AppColors.primary.withOpacity(0.15),
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.2),
+                        blurRadius: 40,
+                        spreadRadius: 10,
+                      ),
+                    ],
                   ),
                   child: Icon(
                     _isRecurring ? Icons.repeat : Icons.alarm,
                     size: 60,
-                    color: Colors.white,
+                    color: AppColors.primaryLight,
                   ),
                 ),
 
@@ -412,7 +421,8 @@ class _RecurringDialogState extends State<_RecurringDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Make this recurring?'),
+      backgroundColor: AppColors.surface,
+      title: const Text('Make this recurring?', style: TextStyle(color: AppColors.text)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -420,7 +430,7 @@ class _RecurringDialogState extends State<_RecurringDialog> {
           children: [
             Text(
               'Would you like to repeat "${widget.message}" as a recurring reminder?',
-              style: const TextStyle(fontSize: 14),
+              style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 20),
 
@@ -463,7 +473,7 @@ class _RecurringDialogState extends State<_RecurringDialog> {
               // Custom interval picker
               const Text(
                 'Set custom interval:',
-                style: TextStyle(fontWeight: FontWeight.w500),
+                style: TextStyle(fontWeight: FontWeight.w500, color: AppColors.text),
               ),
               const SizedBox(height: 16),
               Row(
@@ -472,12 +482,12 @@ class _RecurringDialogState extends State<_RecurringDialog> {
                   Expanded(
                     child: Column(
                       children: [
-                        const Text('Hours', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        const Text('Hours', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                         const SizedBox(height: 8),
                         Container(
                           height: 120,
                           decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
+                            border: Border.all(color: AppColors.glassBorder),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: ListWheelScrollView.useDelegate(
@@ -508,12 +518,12 @@ class _RecurringDialogState extends State<_RecurringDialog> {
                   Expanded(
                     child: Column(
                       children: [
-                        const Text('Minutes', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        const Text('Minutes', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                         const SizedBox(height: 8),
                         Container(
                           height: 120,
                           decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
+                            border: Border.all(color: AppColors.glassBorder),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: ListWheelScrollView.useDelegate(
@@ -589,16 +599,17 @@ class _RecurringDialogState extends State<_RecurringDialog> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(8),
+          color: AppColors.glass,
+          border: Border.all(color: AppColors.glassBorder),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            Icon(icon, color: Theme.of(context).primaryColor),
+            Icon(icon, color: AppColors.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -606,16 +617,16 @@ class _RecurringDialogState extends State<_RecurringDialog> {
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.text),
                   ),
                   Text(
                     subtitle,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.grey.shade400),
+            Icon(Icons.chevron_right, color: AppColors.textHint),
           ],
         ),
       ),

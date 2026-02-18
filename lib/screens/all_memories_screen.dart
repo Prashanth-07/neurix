@@ -5,6 +5,8 @@ import '../services/local_db_service.dart';
 import '../services/embedding_service.dart';
 import '../models/memory_model.dart';
 import '../utils/constants.dart';
+import '../widgets/starfield_background.dart';
+import '../widgets/glass_card.dart';
 
 class AllMemoriesScreen extends StatefulWidget {
   const AllMemoriesScreen({Key? key}) : super(key: key);
@@ -67,7 +69,6 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
       final authService = context.read<AuthService>();
       final userId = authService.currentUser?.uid ?? 'anonymous';
 
-      // Generate embedding for the memory content
       print('Generating embedding for memory...');
       final embedding = await _embeddingService.generateEmbedding(content, isQuery: false);
       print('Embedding generated with ${embedding.length} dimensions');
@@ -102,8 +103,9 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Memory'),
-        content: const Text('Are you sure you want to delete this memory?'),
+        backgroundColor: AppColors.surface,
+        title: const Text('Delete Memory', style: TextStyle(color: AppColors.text)),
+        content: const Text('Are you sure you want to delete this memory?', style: TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -111,7 +113,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -137,7 +139,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: AppColors.error,
       ),
     );
   }
@@ -146,7 +148,7 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.green,
+        backgroundColor: AppColors.success,
       ),
     );
   }
@@ -159,7 +161,6 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
     final authService = context.read<AuthService>();
     final userId = authService.currentUser?.uid ?? 'anonymous';
 
-    // Get memories without embeddings
     final memoriesWithoutEmbeddings = await _localDbService.getMemoriesWithoutEmbeddings(userId);
 
     if (memoriesWithoutEmbeddings.isEmpty) {
@@ -194,226 +195,249 @@ class _AllMemoriesScreenState extends State<AllMemoriesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('All Memories'),
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        title: const Text('All Memories'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.auto_fix_high),
+            icon: const Icon(Icons.auto_fix_high, color: AppColors.textSecondary),
             onPressed: _regenerateEmbeddings,
             tooltip: 'Generate Embeddings',
           ),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: AppColors.textSecondary),
             onPressed: _loadMemories,
             tooltip: 'Refresh',
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Add Memory Section
-          Card(
-            margin: const EdgeInsets.all(16.0),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Add New Memory',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
+      body: StarfieldBackground(
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Add Memory Section
+              Padding(
+                padding: const EdgeInsets.all(AppSizes.paddingMedium),
+                child: GlassCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _memoryController,
-                          decoration: const InputDecoration(
-                            hintText: 'Type your memory here...',
-                            border: OutlineInputBorder(),
-                          ),
-                          maxLines: 2,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _addMemory(),
-                        ),
+                      Text(
+                        'Add New Memory',
+                        style: AppTextStyles.subheading,
                       ),
-                      const SizedBox(width: 8),
-                      _isAddingMemory
-                          ? const SizedBox(
-                              width: 48,
-                              height: 48,
-                              child: Padding(
-                                padding: EdgeInsets.all(12),
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _memoryController,
+                              style: const TextStyle(color: AppColors.text),
+                              decoration: AppInputDecorations.textField(
+                                label: 'Memory',
+                                icon: Icons.lightbulb_outline,
+                                hintText: 'Type your memory here...',
                               ),
-                            )
-                          : IconButton(
-                              onPressed: _addMemory,
-                              icon: const Icon(Icons.add_circle),
-                              iconSize: 48,
-                              color: Theme.of(context).colorScheme.primary,
-                              tooltip: 'Add Memory',
+                              maxLines: 2,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => _addMemory(),
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          _isAddingMemory
+                              ? const SizedBox(
+                                  width: 48,
+                                  height: 48,
+                                  child: Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                                  ),
+                                )
+                              : IconButton(
+                                  onPressed: _addMemory,
+                                  icon: const Icon(Icons.add_circle),
+                                  iconSize: 48,
+                                  color: AppColors.primary,
+                                  tooltip: 'Add Memory',
+                                ),
+                        ],
+                      ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ),
-
-          // Memories Count
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              children: [
-                Text(
-                  'Your Memories (${_memories.length})',
-                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const Spacer(),
-                if (_memories.isNotEmpty)
-                  TextButton.icon(
-                    onPressed: () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Delete All Memories'),
-                          content: const Text('Are you sure you want to delete all memories? This cannot be undone.'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Cancel'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(context, true),
-                              style: TextButton.styleFrom(foregroundColor: Colors.red),
-                              child: const Text('Delete All'),
-                            ),
-                          ],
-                        ),
-                      );
+              ),
 
-                      if (confirmed == true) {
-                        final authService = context.read<AuthService>();
-                        final userId = authService.currentUser?.uid ?? 'anonymous';
-                        await _localDbService.deleteAllMemoriesForUser(userId);
-                        _loadMemories();
-                        _showSuccess('All memories deleted');
-                      }
-                    },
-                    icon: const Icon(Icons.delete_sweep, size: 18),
-                    label: const Text('Clear All'),
-                    style: TextButton.styleFrom(foregroundColor: Colors.red),
-                  ),
-              ],
-            ),
-          ),
-
-          const Divider(),
-
-          // Memories List
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _memories.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.memory,
-                              size: 64,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No memories yet',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    color: Colors.grey[600],
-                                  ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Add your first memory above or use voice interaction',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.grey[500],
-                                  ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(8.0),
-                        itemCount: _memories.length,
-                        itemBuilder: (context, index) {
-                          final memory = _memories[index];
-                          return Card(
-                            margin: const EdgeInsets.symmetric(
-                              horizontal: 8.0,
-                              vertical: 4.0,
-                            ),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                child: Icon(
-                                  Icons.lightbulb_outline,
-                                  color: Theme.of(context).colorScheme.primary,
+              // Memories Count
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingMedium),
+                child: Row(
+                  children: [
+                    Text(
+                      'Your Memories (${_memories.length})',
+                      style: AppTextStyles.subheading,
+                    ),
+                    const Spacer(),
+                    if (_memories.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              backgroundColor: AppColors.surface,
+                              title: const Text('Delete All Memories', style: TextStyle(color: AppColors.text)),
+                              content: const Text('Are you sure you want to delete all memories? This cannot be undone.', style: TextStyle(color: AppColors.textSecondary)),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
                                 ),
-                              ),
-                              title: Text(
-                                memory.content,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: Text(
-                                _formatDate(memory.createdAt),
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete_outline),
-                                onPressed: () => _deleteMemory(memory),
-                                color: Colors.red[400],
-                              ),
-                              onTap: () {
-                                // Show full memory in a dialog
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Text('Memory'),
-                                    content: SingleChildScrollView(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(memory.content),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            'Added: ${_formatDate(memory.createdAt)}',
-                                            style: Theme.of(context).textTheme.bodySmall,
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                                  child: const Text('Delete All'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (confirmed == true) {
+                            final authService = context.read<AuthService>();
+                            final userId = authService.currentUser?.uid ?? 'anonymous';
+                            await _localDbService.deleteAllMemoriesForUser(userId);
+                            _loadMemories();
+                            _showSuccess('All memories deleted');
+                          }
+                        },
+                        icon: const Icon(Icons.delete_sweep, size: 18),
+                        label: const Text('Clear All'),
+                        style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                      ),
+                  ],
+                ),
+              ),
+
+              Divider(color: AppColors.glassBorder),
+
+              // Memories List
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                    : _memories.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.memory,
+                                  size: 64,
+                                  color: AppColors.textHint,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No memories yet',
+                                  style: AppTextStyles.subheading.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Add your first memory above or use voice interaction',
+                                  style: AppTextStyles.caption,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(AppSizes.paddingSmall),
+                            itemCount: _memories.length,
+                            itemBuilder: (context, index) {
+                              final memory = _memories[index];
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSizes.paddingSmall,
+                                  vertical: 4,
+                                ),
+                                child: GlassCard(
+                                  onTap: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        backgroundColor: AppColors.surface,
+                                        title: const Text('Memory', style: TextStyle(color: AppColors.text)),
+                                        content: SingleChildScrollView(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(memory.content, style: const TextStyle(color: AppColors.text)),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'Added: ${_formatDate(memory.createdAt)}',
+                                                style: AppTextStyles.caption,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context),
+                                            child: const Text('Close'),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context),
-                                        child: const Text('Close'),
+                                    );
+                                  },
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 44,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.warning.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: const Icon(
+                                          Icons.lightbulb_outline,
+                                          color: AppColors.warning,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              memory.content,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(color: AppColors.text),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              _formatDate(memory.createdAt),
+                                              style: AppTextStyles.caption,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.delete_outline, color: AppColors.error.withOpacity(0.7)),
+                                        onPressed: () => _deleteMemory(memory),
                                       ),
                                     ],
                                   ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
+                                ),
+                              );
+                            },
+                          ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

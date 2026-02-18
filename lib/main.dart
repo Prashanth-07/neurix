@@ -242,12 +242,17 @@ class MyApp extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return MaterialApp(
+            debugShowCheckedModeBanner: false,
             home: Scaffold(
+              backgroundColor: AppColors.background,
               body: Center(
-                child: Text(
-                  'Error initializing services: ${snapshot.error}',
-                  style: TextStyle(color: Colors.red),
-                  textAlign: TextAlign.center,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSizes.paddingLarge),
+                  child: Text(
+                    'Error initializing services. Please restart the app.',
+                    style: AppTextStyles.body.copyWith(color: AppColors.error),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ),
             ),
@@ -256,9 +261,29 @@ class MyApp extends StatelessWidget {
 
         if (!snapshot.hasData) {
           return MaterialApp(
-            home: const Scaffold(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(
+              backgroundColor: AppColors.background,
               body: Center(
-                child: CircularProgressIndicator(),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/icon/neurixLogo_white.png',
+                      width: 80,
+                      height: 80,
+                    ),
+                    const SizedBox(height: AppSizes.paddingLarge),
+                    const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -290,8 +315,93 @@ class MyApp extends StatelessWidget {
           child: MaterialApp(
             navigatorKey: navigatorKey,
             title: 'Neurix',
+            debugShowCheckedModeBanner: false,
             theme: ThemeData(
-              primarySwatch: Colors.deepPurple,
+              brightness: Brightness.dark,
+              scaffoldBackgroundColor: AppColors.background,
+              primaryColor: AppColors.primary,
+              colorScheme: const ColorScheme.dark(
+                primary: AppColors.primary,
+                secondary: AppColors.primaryLight,
+                surface: AppColors.surface,
+                error: AppColors.error,
+              ),
+              appBarTheme: const AppBarTheme(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                centerTitle: true,
+                titleTextStyle: TextStyle(
+                  color: AppColors.text,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+                iconTheme: IconThemeData(color: AppColors.text),
+              ),
+              elevatedButtonTheme: ElevatedButtonThemeData(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.text,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppSizes.paddingMedium,
+                    horizontal: AppSizes.paddingLarge,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              textButtonTheme: TextButtonThemeData(
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primaryLight,
+                ),
+              ),
+              outlinedButtonTheme: OutlinedButtonThemeData(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.text,
+                  side: BorderSide(color: AppColors.glassBorder),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+                  ),
+                ),
+              ),
+              cardTheme: CardTheme(
+                color: AppColors.surface,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+                ),
+              ),
+              dividerColor: AppColors.glassBorder,
+              bottomSheetTheme: const BottomSheetThemeData(
+                backgroundColor: AppColors.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                ),
+              ),
+              dialogTheme: DialogTheme(
+                backgroundColor: AppColors.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+                ),
+              ),
+              floatingActionButtonTheme: const FloatingActionButtonThemeData(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.text,
+              ),
+              snackBarTheme: SnackBarThemeData(
+                backgroundColor: AppColors.surface,
+                contentTextStyle: const TextStyle(color: AppColors.text),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                behavior: SnackBarBehavior.floating,
+              ),
               visualDensity: VisualDensity.adaptivePlatformDensity,
             ),
             home: const AuthWrapper(),
@@ -552,9 +662,28 @@ class LoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
+      backgroundColor: AppColors.background,
       body: Center(
-        child: CircularProgressIndicator(),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              'assets/icon/neurixLogo_white.png',
+              width: 80,
+              height: 80,
+            ),
+            const SizedBox(height: AppSizes.paddingLarge),
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -566,35 +695,44 @@ class ErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              size: 64,
-              color: AppColors.error,
-            ),
-            const SizedBox(height: AppSizes.paddingMedium),
-            Text(
-              'Something went wrong',
-              style: AppTextStyles.heading.copyWith(
-                color: AppColors.error,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSizes.paddingLarge),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: AppColors.error,
+                ),
               ),
-            ),
-            const SizedBox(height: AppSizes.paddingSmall),
-            Text(
-              'Please try again later',
-              style: AppTextStyles.caption,
-            ),
-            const SizedBox(height: AppSizes.paddingLarge),
-            ElevatedButton(
-              onPressed: () {
-                context.read<AuthService>().signOut();
-              },
-              child: const Text('Return to Login'),
-            ),
-          ],
+              const SizedBox(height: AppSizes.paddingLarge),
+              Text(
+                'Something went wrong',
+                style: AppTextStyles.heading,
+              ),
+              const SizedBox(height: AppSizes.paddingSmall),
+              Text(
+                'Please try again later',
+                style: AppTextStyles.caption,
+              ),
+              const SizedBox(height: AppSizes.paddingLarge * 1.5),
+              ElevatedButton(
+                onPressed: () {
+                  context.read<AuthService>().signOut();
+                },
+                child: const Text('Return to Login'),
+              ),
+            ],
+          ),
         ),
       ),
     );

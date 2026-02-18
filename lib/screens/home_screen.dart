@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -14,6 +15,10 @@ import '../models/memory_model.dart';
 import '../models/reminder_model.dart';
 import '../utils/constants.dart';
 import '../widgets/confirmation_dialog.dart';
+import '../widgets/starfield_background.dart';
+import '../widgets/glass_card.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'all_memories_screen.dart';
 import 'reminders_screen.dart';
 import 'upgrade_screen.dart';
@@ -658,41 +663,69 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final authService = Provider.of<AuthService>(context);
-    final UserModel? user = authService.currentUser;
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final UserModel? user = Provider.of<UserModel?>(context);
     final userId = user?.uid ?? 'anonymous';
 
     return Scaffold(
+      backgroundColor: AppColors.background,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Neurix'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/icon/neurixLogo_white.png',
+              width: 28,
+              height: 28,
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Neurix',
+              style: TextStyle(
+                color: AppColors.text,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_rounded, color: AppColors.textSecondary),
             onPressed: () async {
               await authService.signOut();
             },
           ),
         ],
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSizes.paddingMedium),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // User Profile Card
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSizes.paddingMedium),
+      body: StarfieldBackground(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSizes.paddingMedium),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // User Profile Card
+                GlassCard(
+                  onTap: () => _showProfileSheet(user),
                   child: Row(
                     children: [
-                      CircleAvatar(
-                        radius: 25,
-                        backgroundColor: AppColors.primary.withOpacity(0.1),
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.primary.withOpacity(0.3),
+                              AppColors.primaryLight.withOpacity(0.15),
+                            ],
+                          ),
+                        ),
                         child: user?.photoUrl != null
                             ? ClipOval(
                                 child: Image.network(
@@ -704,14 +737,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       const Icon(
                                     Icons.person_outline,
                                     size: 25,
-                                    color: AppColors.primary,
+                                    color: AppColors.primaryLight,
                                   ),
                                 ),
                               )
                             : const Icon(
                                 Icons.person_outline,
                                 size: 25,
-                                color: AppColors.primary,
+                                color: AppColors.primaryLight,
                               ),
                       ),
                       const SizedBox(width: AppSizes.paddingMedium),
@@ -723,157 +756,206 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               user?.displayName ?? 'User',
                               style: AppTextStyles.subheading,
                             ),
-                            Text(
-                              user?.email ?? '',
-                              style: AppTextStyles.caption,
-                            ),
+                            if (user?.email != null)
+                              Text(
+                                user!.email,
+                                style: AppTextStyles.caption.copyWith(fontSize: 12),
+                              ),
                           ],
                         ),
+                      ),
+                      Icon(
+                        Icons.chevron_right,
+                        color: AppColors.textHint,
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: AppSizes.paddingLarge),
+                const SizedBox(height: AppSizes.paddingLarge * 1.5),
 
-              // Big Mic Button
-              Center(
-                child: GestureDetector(
-                  onTap: _isProcessing
-                      ? null
-                      : (_isListening ? _stopListening : _startListening),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: _isListening ? 140 : 120,
-                    height: _isListening ? 140 : 120,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: _isListening
-                            ? [Colors.red, Colors.redAccent]
-                            : _isProcessing
-                                ? [Colors.orange, Colors.orangeAccent]
-                                : [Colors.deepPurple, Colors.purpleAccent],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                // Big Mic Button
+                Center(
+                  child: GestureDetector(
+                    onTap: _isProcessing
+                        ? null
+                        : (_isListening ? _stopListening : _startListening),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      width: _isListening ? 150 : 130,
+                      height: _isListening ? 150 : 130,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: _isListening
+                              ? [
+                                  const Color(0xFFEF4444),
+                                  const Color(0xFFDC2626),
+                                ]
+                              : _isProcessing
+                                  ? [
+                                      AppColors.warning,
+                                      const Color(0xFFD97706),
+                                    ]
+                                  : [
+                                      AppColors.primaryLight,
+                                      AppColors.primary,
+                                    ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_isListening
+                                    ? const Color(0xFFEF4444)
+                                    : _isProcessing
+                                        ? AppColors.warning
+                                        : AppColors.primary)
+                                .withOpacity(0.4),
+                            blurRadius: _isListening ? 40 : 25,
+                            spreadRadius: _isListening ? 8 : 2,
+                          ),
+                          BoxShadow(
+                            color: (_isListening
+                                    ? const Color(0xFFEF4444)
+                                    : _isProcessing
+                                        ? AppColors.warning
+                                        : AppColors.primary)
+                                .withOpacity(0.15),
+                            blurRadius: 60,
+                            spreadRadius: 15,
+                          ),
+                        ],
                       ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_isListening
-                                  ? Colors.red
-                                  : _isProcessing
-                                      ? Colors.orange
-                                      : Colors.deepPurple)
-                              .withOpacity(0.4),
-                          blurRadius: _isListening ? 30 : 20,
-                          spreadRadius: _isListening ? 4 : 2,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      _isListening
-                          ? Icons.stop
-                          : _isProcessing
-                              ? Icons.hourglass_top
-                              : Icons.mic,
-                      size: 60,
-                      color: Colors.white,
+                      child: Icon(
+                        _isListening
+                            ? Icons.stop_rounded
+                            : _isProcessing
+                                ? Icons.hourglass_top_rounded
+                                : Icons.mic_rounded,
+                        size: 56,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: AppSizes.paddingMedium),
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSizes.paddingMedium,
-                    vertical: AppSizes.paddingSmall,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _isListening
-                        ? Colors.red.withOpacity(0.1)
-                        : _isProcessing
-                            ? Colors.orange.withOpacity(0.1)
-                            : Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _statusText,
-                    style: AppTextStyles.body.copyWith(
+                const SizedBox(height: AppSizes.paddingMedium),
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSizes.paddingMedium,
+                      vertical: AppSizes.paddingSmall,
+                    ),
+                    decoration: BoxDecoration(
                       color: _isListening
-                          ? Colors.red
+                          ? const Color(0xFFEF4444).withOpacity(0.12)
                           : _isProcessing
-                              ? Colors.orange
-                              : Colors.grey[600],
-                      fontWeight:
-                          _isListening || _isProcessing ? FontWeight.w500 : FontWeight.normal,
+                              ? AppColors.warning.withOpacity(0.12)
+                              : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                      border: (_isListening || _isProcessing)
+                          ? Border.all(
+                              color: (_isListening
+                                      ? const Color(0xFFEF4444)
+                                      : AppColors.warning)
+                                  .withOpacity(0.2),
+                            )
+                          : null,
                     ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    child: Text(
+                      _statusText,
+                      style: AppTextStyles.body.copyWith(
+                        color: _isListening
+                            ? const Color(0xFFEF4444)
+                            : _isProcessing
+                                ? AppColors.warning
+                                : AppColors.textSecondary,
+                        fontWeight:
+                            _isListening || _isProcessing ? FontWeight.w500 : FontWeight.normal,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: AppSizes.paddingLarge),
+                const SizedBox(height: AppSizes.paddingLarge * 1.5),
 
-              // Subscription Status Card
-              _buildSubscriptionCard(),
-              const SizedBox(height: AppSizes.paddingMedium),
+                // Subscription Status Card
+                _buildSubscriptionCard(),
+                const SizedBox(height: AppSizes.paddingMedium),
 
-              // All Memories Card
-              FutureBuilder<List<Memory>>(
-                future: LocalDbService().getMemoriesByUserId(userId),
-                builder: (context, snapshot) {
-                  final memories = snapshot.data ?? [];
-                  final count = memories.length;
+                // All Memories Card
+                FutureBuilder<List<Memory>>(
+                  future: LocalDbService().getMemoriesByUserId(userId),
+                  builder: (context, snapshot) {
+                    final memories = snapshot.data ?? [];
+                    final count = memories.length;
 
-                  return _buildNavigationCardWithLimit(
-                    title: 'All Memories',
-                    count: count,
-                    limit: _subscriptionService.memoryLimit,
-                    icon: Icons.lightbulb_outline,
-                    iconColor: Colors.amber,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const AllMemoriesScreen(),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: AppSizes.paddingMedium),
+                    return _buildNavigationCardWithLimit(
+                      title: 'All Memories',
+                      count: count,
+                      limit: _subscriptionService.memoryLimit,
+                      icon: Icons.lightbulb_outline,
+                      iconColor: AppColors.warning,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AllMemoriesScreen(),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: AppSizes.paddingMedium),
 
-              // All Reminders Card
-              FutureBuilder<List<Reminder>>(
-                future: LocalDbService().getActiveRemindersByUserId(userId),
-                builder: (context, snapshot) {
-                  final reminders = snapshot.data ?? [];
-                  final count = reminders.length;
+                // All Reminders Card
+                FutureBuilder<List<Reminder>>(
+                  future: LocalDbService().getActiveRemindersByUserId(userId),
+                  builder: (context, snapshot) {
+                    final reminders = snapshot.data ?? [];
+                    final count = reminders.length;
 
-                  return _buildNavigationCardWithLimit(
-                    title: 'All Reminders',
-                    count: count,
-                    limit: _subscriptionService.reminderLimit,
-                    icon: Icons.notifications_outlined,
-                    iconColor: Colors.deepPurple,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const RemindersScreen(),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ],
+                    return _buildNavigationCardWithLimit(
+                      title: 'All Reminders',
+                      count: count,
+                      limit: _subscriptionService.reminderLimit,
+                      icon: Icons.notifications_outlined,
+                      iconColor: AppColors.primaryLight,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const RemindersScreen(),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: AppSizes.paddingMedium),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showProfileSheet(UserModel? user) {
+    final authService = Provider.of<AuthService>(context, listen: false);
+    // Get Google profile photo directly from Firebase Auth
+    final googlePhotoUrl = FirebaseAuth.instance.currentUser?.photoURL;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => _ProfileSheet(
+        user: user,
+        authService: authService,
+        googlePhotoUrl: googlePhotoUrl,
       ),
     );
   }
@@ -881,85 +963,79 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildSubscriptionCard() {
     final isPro = _subscriptionService.isPro;
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-      ),
-      color: isPro ? Colors.green.withOpacity(0.1) : null,
-      child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const UpgradeScreen(),
-            ),
-          );
-        },
-        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSizes.paddingMedium),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: isPro
-                      ? Colors.green.withOpacity(0.2)
-                      : Colors.amber.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  isPro ? Icons.workspace_premium : Icons.star_outline,
-                  color: isPro ? Colors.green : Colors.amber,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: AppSizes.paddingMedium),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isPro ? 'Neurix Pro' : 'Free Plan',
-                      style: AppTextStyles.subheading.copyWith(
-                        color: isPro ? Colors.green : null,
-                      ),
-                    ),
-                    Text(
-                      isPro
-                          ? 'Unlimited memories & reminders'
-                          : 'Tap to upgrade for unlimited',
-                      style: AppTextStyles.caption,
-                    ),
-                  ],
-                ),
-              ),
-              if (!isPro)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.green,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Text(
-                    'UPGRADE',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                )
-              else
-                const Icon(
-                  Icons.check_circle,
-                  color: Colors.green,
-                ),
-            ],
+    return GlassCard(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const UpgradeScreen(),
           ),
-        ),
+        );
+      },
+      backgroundColor: isPro ? AppColors.success.withOpacity(0.08) : null,
+      borderColor: isPro ? AppColors.success.withOpacity(0.2) : null,
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: isPro
+                  ? AppColors.success.withOpacity(0.15)
+                  : AppColors.warning.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              isPro ? Icons.workspace_premium : Icons.star_outline_rounded,
+              color: isPro ? AppColors.success : AppColors.warning,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: AppSizes.paddingMedium),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isPro ? 'Neurix Pro' : 'Free Plan',
+                  style: AppTextStyles.subheading.copyWith(
+                    color: isPro ? AppColors.success : null,
+                  ),
+                ),
+                Text(
+                  isPro
+                      ? 'Unlimited memories & reminders'
+                      : 'Tap to upgrade for unlimited',
+                  style: AppTextStyles.caption,
+                ),
+              ],
+            ),
+          ),
+          if (!isPro)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppColors.primary, AppColors.primaryLight],
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Text(
+                'UPGRADE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            )
+          else
+            const Icon(
+              Icons.check_circle,
+              color: AppColors.success,
+            ),
+        ],
       ),
     );
   }
@@ -975,122 +1051,317 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final isUnlimited = limit == -1;
     final isAtLimit = !isUnlimited && count >= limit;
 
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSizes.paddingMedium),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: iconColor,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: AppSizes.paddingMedium),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: AppTextStyles.subheading,
-                    ),
-                    Text(
-                      isUnlimited
-                          ? '$count items'
-                          : '$count / $limit',
-                      style: AppTextStyles.caption.copyWith(
-                        color: isAtLimit ? Colors.orange : null,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (isAtLimit)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'FULL',
-                    style: TextStyle(
-                      color: Colors.orange,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                )
-              else
-                Icon(
-                  Icons.chevron_right,
-                  color: Colors.grey[400],
-                ),
-            ],
+    return GlassCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon,
+              color: iconColor,
+              size: 26,
+            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavigationCard({
-    required String title,
-    required int count,
-    required IconData icon,
-    required Color iconColor,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSizes.paddingMedium),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: iconColor,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: AppSizes.paddingMedium),
-              Expanded(
-                child: Text(
-                  '$title ($count)',
+          const SizedBox(width: AppSizes.paddingMedium),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
                   style: AppTextStyles.subheading,
                 ),
+                Text(
+                  isUnlimited
+                      ? '$count items'
+                      : '$count / $limit',
+                  style: AppTextStyles.caption.copyWith(
+                    color: isAtLimit ? AppColors.warning : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isAtLimit)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.warning.withOpacity(0.3)),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: Colors.grey[400],
+              child: const Text(
+                'FULL',
+                style: TextStyle(
+                  color: AppColors.warning,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
+            )
+          else
+            Icon(
+              Icons.chevron_right,
+              color: AppColors.textHint,
+            ),
+        ],
+      ),
+    );
+  }
+
+}
+
+class _ProfileSheet extends StatefulWidget {
+  final UserModel? user;
+  final AuthService authService;
+  final String? googlePhotoUrl;
+
+  const _ProfileSheet({required this.user, required this.authService, this.googlePhotoUrl});
+
+  @override
+  State<_ProfileSheet> createState() => _ProfileSheetState();
+}
+
+class _ProfileSheetState extends State<_ProfileSheet> {
+  late TextEditingController _nameController;
+  Map<Permission, PermissionStatus> _statuses = {};
+  bool _loadingPermissions = true;
+  bool _savingProfile = false;
+  String? _selectedAvatar;
+
+  static const List<String> _avatars = [
+    'https://api.dicebear.com/9.x/notionists/png?seed=Felix&backgroundColor=b6e3f4',
+    'https://api.dicebear.com/9.x/notionists/png?seed=James&backgroundColor=c0aede',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Oliver&backgroundColor=d1f4d9',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Ethan&backgroundColor=ffeaa7',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Daniel&backgroundColor=dfe6e9',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Sophia&backgroundColor=ffdfbf',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Emma&backgroundColor=ffd5dc',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Aria&backgroundColor=e8daef',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Grace&backgroundColor=fadbd8',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Chloe&backgroundColor=abebc6',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Isabella&backgroundColor=d5f5e3',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Violet&backgroundColor=d2b4de',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Nora&backgroundColor=f9e79f',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Elena&backgroundColor=aed6f1',
+    'https://api.dicebear.com/9.x/notionists/png?seed=Ruby&backgroundColor=f5b7b1',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.user?.displayName ?? '');
+    _selectedAvatar = widget.user?.photoUrl;
+    _checkPermissions();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkPermissions() async {
+    final checked = {
+      Permission.notification: await Permission.notification.status,
+      Permission.microphone: await Permission.microphone.status,
+      Permission.scheduleExactAlarm: await Permission.scheduleExactAlarm.status,
+      Permission.systemAlertWindow: await Permission.systemAlertWindow.status,
+    };
+    if (mounted) {
+      setState(() {
+        _statuses = checked;
+        _loadingPermissions = false;
+      });
+    }
+  }
+
+  Future<void> _requestPermission(Permission permission) async {
+    final status = await permission.status;
+    if (status.isPermanentlyDenied) {
+      await openAppSettings();
+    } else {
+      await permission.request();
+    }
+    await _checkPermissions();
+  }
+
+  Widget _buildAvatarOption(String avatarUrl, {String? label}) {
+    final isSelected = _selectedAvatar == avatarUrl;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedAvatar = avatarUrl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? AppColors.primary : Colors.transparent,
+                width: 3,
+              ),
+              boxShadow: isSelected
+                  ? [BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 8)]
+                  : [],
+            ),
+            child: CircleAvatar(
+              radius: 28,
+              backgroundColor: AppColors.glass,
+              backgroundImage: NetworkImage(avatarUrl),
+            ),
+          ),
+          if (label != null) ...[
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveProfile() async {
+    final newName = _nameController.text.trim();
+    if (newName.isEmpty) return;
+
+    setState(() => _savingProfile = true);
+
+    final success = await widget.authService.updateUserProfile(
+      displayName: newName,
+      photoUrl: _selectedAvatar,
+    );
+
+    setState(() => _savingProfile = false);
+
+    if (success && mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile updated'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surface,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).viewInsets.bottom + 32),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.glassBorder,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // --- Profile Section ---
+              const Text(
+                'Profile',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.text),
+              ),
+              const SizedBox(height: 16),
+
+              // Avatar Selection
+              const Text('Choose Avatar', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  // Google profile photo as first option
+                  if (widget.googlePhotoUrl != null)
+                    _buildAvatarOption(widget.googlePhotoUrl!, label: 'Google'),
+                  // DiceBear avatars
+                  ..._avatars.map((avatarUrl) => _buildAvatarOption(avatarUrl)),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Name Field
+              TextField(
+                controller: _nameController,
+                style: const TextStyle(color: AppColors.text),
+                decoration: AppInputDecorations.textField(
+                  label: 'Display Name',
+                  icon: Icons.person_outline,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Save Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _savingProfile ? null : _saveProfile,
+                  child: _savingProfile
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save Profile', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                ),
+              ),
+              const SizedBox(height: 28),
+
+              // --- Permissions Section ---
+              const Text(
+                'Permissions',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.text),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Grant permissions for the best experience',
+                style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              if (_loadingPermissions)
+                const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(color: AppColors.primary)))
+              else ...[
+                _buildPermissionTile(
+                  icon: Icons.notifications_outlined,
+                  title: 'Notifications',
+                  subtitle: 'Reminders, alarms & voice control',
+                  permission: Permission.notification,
+                ),
+                _buildPermissionTile(
+                  icon: Icons.mic_outlined,
+                  title: 'Microphone',
+                  subtitle: 'Voice commands & speech recognition',
+                  permission: Permission.microphone,
+                ),
+                _buildPermissionTile(
+                  icon: Icons.alarm_outlined,
+                  title: 'Exact Alarms',
+                  subtitle: 'Precise reminder scheduling',
+                  permission: Permission.scheduleExactAlarm,
+                ),
+                _buildPermissionTile(
+                  icon: Icons.picture_in_picture_outlined,
+                  title: 'Overlay',
+                  subtitle: 'Floating voice assistant bubble',
+                  permission: Permission.systemAlertWindow,
+                ),
+              ],
             ],
           ),
         ),
@@ -1098,24 +1369,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
+  Widget _buildPermissionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Permission permission,
+  }) {
+    final status = _statuses[permission];
+    final isGranted = status?.isGranted ?? false;
 
-    if (diff.inDays == 0) {
-      if (diff.inHours == 0) {
-        if (diff.inMinutes == 0) {
-          return 'Just now';
-        }
-        return '${diff.inMinutes}m ago';
-      }
-      return '${diff.inHours}h ago';
-    } else if (diff.inDays == 1) {
-      return 'Yesterday';
-    } else if (diff.inDays < 7) {
-      return '${diff.inDays}d ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: AppColors.glassBorder),
+        ),
+        tileColor: AppColors.glass,
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: (isGranted ? AppColors.success : AppColors.primary).withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: isGranted ? AppColors.success : AppColors.primary),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.text)),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+        trailing: isGranted
+            ? const Icon(Icons.check_circle, color: AppColors.success)
+            : TextButton(
+                onPressed: () => _requestPermission(permission),
+                child: const Text('Grant'),
+              ),
+      ),
+    );
   }
-} 
+}

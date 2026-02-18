@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+import '../utils/constants.dart';
 
 /// Confirmation dialog for save memory and reminder intents
 /// Shows transcribed text, speaks it aloud, listens for yes/no voice input
@@ -175,8 +176,9 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
+      backgroundColor: AppColors.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
       ),
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -189,8 +191,8 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
               height: 60,
               decoration: BoxDecoration(
                 color: widget.intent == 'save'
-                    ? Colors.amber.withOpacity(0.15)
-                    : Colors.deepPurple.withOpacity(0.15),
+                    ? AppColors.warning.withOpacity(0.12)
+                    : AppColors.primary.withOpacity(0.12),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -199,8 +201,8 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
                     : Icons.notifications_outlined,
                 size: 32,
                 color: widget.intent == 'save'
-                    ? Colors.amber[700]
-                    : Colors.deepPurple,
+                    ? AppColors.warning
+                    : AppColors.primary,
               ),
             ),
             const SizedBox(height: 16),
@@ -213,7 +215,7 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
-                color: Colors.black87,
+                color: AppColors.text,
               ),
               textAlign: TextAlign.center,
             ),
@@ -223,15 +225,16 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
+                color: AppColors.glass,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.glassBorder),
               ),
               child: Text(
                 '"${widget.transcribedText}"',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 15,
                   fontStyle: FontStyle.italic,
-                  color: Colors.grey[800],
+                  color: AppColors.textSecondary,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -245,14 +248,12 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
+                    const SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Colors.deepPurple.withOpacity(0.7),
-                        ),
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -260,7 +261,7 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
                       'Listening... (say "yes" or "no")',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ],
@@ -276,16 +277,16 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
                     onPressed: _handleCancel,
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      side: BorderSide(color: Colors.grey[400]!),
+                      side: BorderSide(color: AppColors.glassBorder),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
                       ),
                     ),
                     child: const Text(
                       'No',
                       style: TextStyle(
                         fontSize: 16,
-                        color: Colors.black54,
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ),
@@ -298,17 +299,12 @@ class _ConfirmationDialogState extends State<ConfirmationDialog> {
                     onPressed: _handleConfirm,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      backgroundColor: Colors.deepPurple,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
                     ),
                     child: const Text(
                       'Yes',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
                       ),
                     ),
                   ),

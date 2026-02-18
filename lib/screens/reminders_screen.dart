@@ -4,6 +4,8 @@ import '../models/reminder_model.dart';
 import '../services/auth_service.dart';
 import '../services/reminder_service.dart';
 import '../utils/constants.dart';
+import '../widgets/starfield_background.dart';
+import '../widgets/glass_card.dart';
 
 class RemindersScreen extends StatefulWidget {
   const RemindersScreen({Key? key}) : super(key: key);
@@ -32,35 +34,27 @@ class _RemindersScreenState extends State<RemindersScreen> {
       final authService = Provider.of<AuthService>(context, listen: false);
       final userId = authService.currentUser?.uid ?? 'anonymous';
 
-      // Get all reminders
       final allReminders = await _reminderService.getAllRemindersWithPast(userId);
 
-      // Separate active and past reminders
       final now = DateTime.now();
       final active = <Reminder>[];
       final past = <Reminder>[];
 
       for (final reminder in allReminders) {
         if (reminder.isActive) {
-          // Active reminders: recurring OR one-time in the future
           if (reminder.type == ReminderType.recurring ||
               reminder.nextTrigger.isAfter(now)) {
             active.add(reminder);
           } else {
-            // One-time reminder with time passed but still marked active
-            // Mark it as past
             past.add(reminder);
           }
         } else {
-          // Inactive reminders go to past
           past.add(reminder);
         }
       }
 
-      // Sort active by next trigger (soonest first)
       active.sort((a, b) => a.nextTrigger.compareTo(b.nextTrigger));
 
-      // Sort past by triggered_at or next_trigger (most recent first)
       past.sort((a, b) {
         final aTime = a.triggeredAt ?? a.nextTrigger;
         final bTime = b.triggeredAt ?? b.nextTrigger;
@@ -82,8 +76,9 @@ class _RemindersScreenState extends State<RemindersScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Reminder'),
-        content: Text('Are you sure you want to delete the reminder "${reminder.message}"?'),
+        backgroundColor: AppColors.surface,
+        title: const Text('Delete Reminder', style: TextStyle(color: AppColors.text)),
+        content: Text('Are you sure you want to delete the reminder "${reminder.message}"?', style: const TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -91,7 +86,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -125,7 +120,6 @@ class _RemindersScreenState extends State<RemindersScreen> {
         intervalMinutes: result['intervalMinutes'] as int?,
       );
 
-      // Recalculate next trigger if interval changed
       final finalReminder = updatedReminder.type == ReminderType.recurring &&
               updatedReminder.intervalMinutes != null
           ? updatedReminder.copyWith(
@@ -183,24 +177,33 @@ class _RemindersScreenState extends State<RemindersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: const Text('Reminders'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: AppColors.textSecondary),
             onPressed: _loadReminders,
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addReminder,
-        child: const Icon(Icons.add),
+        backgroundColor: AppColors.primary,
+        child: const Icon(Icons.add, color: Colors.white),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _activeReminders.isEmpty && _pastReminders.isEmpty
-              ? _buildEmptyState()
-              : _buildReminderList(),
+      body: StarfieldBackground(
+        child: SafeArea(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+              : _activeReminders.isEmpty && _pastReminders.isEmpty
+                  ? _buildEmptyState()
+                  : _buildReminderList(),
+        ),
+      ),
     );
   }
 
@@ -212,12 +215,12 @@ class _RemindersScreenState extends State<RemindersScreen> {
           Icon(
             Icons.notifications_off_outlined,
             size: 80,
-            color: Colors.grey[400],
+            color: AppColors.textHint,
           ),
           const SizedBox(height: 16),
           Text(
             'No reminders yet',
-            style: AppTextStyles.subheading.copyWith(color: Colors.grey[600]),
+            style: AppTextStyles.subheading.copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 8),
           Text(
@@ -233,6 +236,7 @@ class _RemindersScreenState extends State<RemindersScreen> {
   Widget _buildReminderList() {
     return RefreshIndicator(
       onRefresh: _loadReminders,
+      color: AppColors.primary,
       child: ListView(
         padding: const EdgeInsets.all(AppSizes.paddingMedium),
         children: [
@@ -250,20 +254,17 @@ class _RemindersScreenState extends State<RemindersScreen> {
 
           // Empty state for active reminders
           if (_activeReminders.isEmpty && _pastReminders.isNotEmpty) ...[
-            Card(
+            GlassCard(
               margin: const EdgeInsets.only(bottom: AppSizes.paddingMedium),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSizes.paddingLarge),
-                child: Column(
-                  children: [
-                    Icon(Icons.notifications_none, size: 40, color: Colors.grey[400]),
-                    const SizedBox(height: 8),
-                    Text(
-                      'No active reminders',
-                      style: AppTextStyles.body.copyWith(color: Colors.grey[600]),
-                    ),
-                  ],
-                ),
+              child: Column(
+                children: [
+                  Icon(Icons.notifications_none, size: 40, color: AppColors.textHint),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No active reminders',
+                    style: AppTextStyles.body.copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
               ),
             ),
           ],
@@ -284,12 +285,12 @@ class _RemindersScreenState extends State<RemindersScreen> {
                   children: [
                     Icon(
                       _isPastExpanded ? Icons.expand_less : Icons.expand_more,
-                      color: Colors.grey[600],
+                      color: AppColors.textSecondary,
                     ),
                     const SizedBox(width: 8),
                     Text(
                       'Past Reminders (${_pastReminders.length})',
-                      style: AppTextStyles.subheading.copyWith(color: Colors.grey[600]),
+                      style: AppTextStyles.subheading.copyWith(color: AppColors.textSecondary),
                     ),
                   ],
                 ),
@@ -308,81 +309,71 @@ class _RemindersScreenState extends State<RemindersScreen> {
   Widget _buildReminderCard(Reminder reminder, {required bool isActive}) {
     final isRecurring = reminder.type == ReminderType.recurring;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppSizes.paddingMedium),
-      elevation: isActive ? 2 : 1,
-      color: isActive ? null : Colors.grey[100],
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSizes.paddingSmall),
+      child: GlassCard(
         onTap: isActive ? () => _editReminder(reminder) : null,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSizes.paddingMedium),
-          child: Row(
-            children: [
-              // Icon
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? (isRecurring ? Colors.blue.withOpacity(0.1) : Colors.orange.withOpacity(0.1))
-                      : Colors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  isRecurring ? Icons.repeat : Icons.notifications_active,
-                  color: isActive
-                      ? (isRecurring ? Colors.blue : Colors.orange)
-                      : Colors.grey,
-                ),
+        backgroundColor: isActive ? null : Colors.white.withOpacity(0.03),
+        child: Row(
+          children: [
+            // Icon
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? (isRecurring ? AppColors.info.withOpacity(0.12) : AppColors.warning.withOpacity(0.12))
+                    : AppColors.glass,
+                borderRadius: BorderRadius.circular(12),
               ),
-              const SizedBox(width: AppSizes.paddingMedium),
-              // Content
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      reminder.message,
-                      style: AppTextStyles.body.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: isActive ? null : Colors.grey[600],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      reminder.formattedSchedule,
-                      style: AppTextStyles.caption.copyWith(
-                        color: isActive
-                            ? (isRecurring ? Colors.blue : Colors.orange)
-                            : Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      isActive
-                          ? 'Next: ${reminder.formattedNextTrigger}'
-                          : 'Triggered: ${_formatTriggeredTime(reminder.triggeredAt ?? reminder.nextTrigger)}',
-                      style: AppTextStyles.caption.copyWith(
-                        color: isActive ? null : Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
+              child: Icon(
+                isRecurring ? Icons.repeat : Icons.notifications_active,
+                color: isActive
+                    ? (isRecurring ? AppColors.info : AppColors.warning)
+                    : AppColors.textHint,
               ),
-              // Delete button
-              IconButton(
-                icon: Icon(
-                  Icons.delete_outline,
-                  color: isActive ? Colors.red : Colors.grey,
-                ),
-                onPressed: () => _deleteReminder(reminder),
+            ),
+            const SizedBox(width: AppSizes.paddingMedium),
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    reminder.message,
+                    style: AppTextStyles.body.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: isActive ? AppColors.text : AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    reminder.formattedSchedule,
+                    style: AppTextStyles.caption.copyWith(
+                      color: isActive
+                          ? (isRecurring ? AppColors.info : AppColors.warning)
+                          : AppColors.textHint,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isActive
+                        ? 'Next: ${reminder.formattedNextTrigger}'
+                        : 'Triggered: ${_formatTriggeredTime(reminder.triggeredAt ?? reminder.nextTrigger)}',
+                    style: AppTextStyles.caption,
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            // Delete button
+            IconButton(
+              icon: Icon(
+                Icons.delete_outline,
+                color: isActive ? AppColors.error.withOpacity(0.7) : AppColors.textHint,
+              ),
+              onPressed: () => _deleteReminder(reminder),
+            ),
+          ],
         ),
       ),
     );
@@ -442,15 +433,18 @@ class _EditReminderDialogState extends State<_EditReminderDialog> {
     final isRecurring = widget.reminder.type == ReminderType.recurring;
 
     return AlertDialog(
-      title: const Text('Edit Reminder'),
+      backgroundColor: AppColors.surface,
+      title: const Text('Edit Reminder', style: TextStyle(color: AppColors.text)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: _messageController,
-              decoration: const InputDecoration(
-                labelText: 'Message',
+              style: const TextStyle(color: AppColors.text),
+              decoration: AppInputDecorations.textField(
+                label: 'Message',
+                icon: Icons.message_outlined,
                 hintText: 'What to remind you about',
               ),
               textCapitalization: TextCapitalization.sentences,
@@ -459,8 +453,10 @@ class _EditReminderDialogState extends State<_EditReminderDialog> {
               const SizedBox(height: 16),
               TextField(
                 controller: _intervalController,
-                decoration: const InputDecoration(
-                  labelText: 'Interval (minutes)',
+                style: const TextStyle(color: AppColors.text),
+                decoration: AppInputDecorations.textField(
+                  label: 'Interval (minutes)',
+                  icon: Icons.timer_outlined,
                   hintText: 'e.g., 30',
                 ),
                 keyboardType: TextInputType.number,
@@ -517,6 +513,17 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.primary,
+              surface: AppColors.surface,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (time != null) {
@@ -527,7 +534,8 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add Reminder'),
+      backgroundColor: AppColors.surface,
+      title: const Text('Add Reminder', style: TextStyle(color: AppColors.text)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -535,34 +543,38 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
           children: [
             TextField(
               controller: _messageController,
-              decoration: const InputDecoration(
-                labelText: 'Message',
+              style: const TextStyle(color: AppColors.text),
+              decoration: AppInputDecorations.textField(
+                label: 'Message',
+                icon: Icons.message_outlined,
                 hintText: 'What to remind you about',
               ),
               textCapitalization: TextCapitalization.sentences,
             ),
             const SizedBox(height: 16),
-            const Text('Type:'),
+            const Text('Type:', style: TextStyle(color: AppColors.textSecondary)),
             Row(
               children: [
                 Expanded(
                   child: RadioListTile<ReminderType>(
-                    title: const Text('Recurring'),
+                    title: const Text('Recurring', style: TextStyle(color: AppColors.text, fontSize: 14)),
                     value: ReminderType.recurring,
                     groupValue: _type,
                     onChanged: (value) => setState(() => _type = value!),
                     contentPadding: EdgeInsets.zero,
                     dense: true,
+                    activeColor: AppColors.primary,
                   ),
                 ),
                 Expanded(
                   child: RadioListTile<ReminderType>(
-                    title: const Text('One-time'),
+                    title: const Text('One-time', style: TextStyle(color: AppColors.text, fontSize: 14)),
                     value: ReminderType.oneTime,
                     groupValue: _type,
                     onChanged: (value) => setState(() => _type = value!),
                     contentPadding: EdgeInsets.zero,
                     dense: true,
+                    activeColor: AppColors.primary,
                   ),
                 ),
               ],
@@ -571,8 +583,10 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
             if (_type == ReminderType.recurring)
               TextField(
                 controller: _intervalController,
-                decoration: const InputDecoration(
-                  labelText: 'Interval (minutes)',
+                style: const TextStyle(color: AppColors.text),
+                decoration: AppInputDecorations.textField(
+                  label: 'Interval (minutes)',
+                  icon: Icons.timer_outlined,
                   hintText: 'e.g., 30 for every 30 minutes',
                 ),
                 keyboardType: TextInputType.number,
@@ -584,8 +598,9 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                   _scheduledTime != null
                       ? 'At ${_scheduledTime!.format(context)}'
                       : 'Select time',
+                  style: const TextStyle(color: AppColors.text),
                 ),
-                trailing: const Icon(Icons.access_time),
+                trailing: const Icon(Icons.access_time, color: AppColors.primary),
                 onTap: _selectTime,
               ),
           ],
@@ -634,7 +649,6 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                 _scheduledTime!.minute,
               );
 
-              // If time has passed, schedule for tomorrow
               if (scheduledDateTime.isBefore(now)) {
                 scheduledDateTime = scheduledDateTime.add(const Duration(days: 1));
               }
@@ -644,7 +658,7 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
                 'type': _type,
                 'intervalMinutes': null,
                 'scheduledTime': scheduledDateTime,
-                'isDurationBased': false, // Time picker is static time-based
+                'isDurationBased': false,
               });
             }
           },

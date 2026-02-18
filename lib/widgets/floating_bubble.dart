@@ -402,26 +402,26 @@ class _FloatingBubbleState extends State<FloatingBubble>
   List<Color> _getGradientColors() {
     switch (_state) {
       case BubbleState.idle:
-        return [Colors.deepPurple.shade400, Colors.deepPurple.shade700];
+        return [const Color(0xFF7C3AED), const Color(0xFF5B21B6)];
       case BubbleState.recording:
-        return [Colors.red.shade400, Colors.red.shade700];
+        return [const Color(0xFFEF4444), const Color(0xFFDC2626)];
       case BubbleState.processing:
-        return [Colors.orange.shade400, Colors.orange.shade700];
+        return [const Color(0xFFF59E0B), const Color(0xFFD97706)];
       case BubbleState.response:
-        return [Colors.green.shade400, Colors.green.shade700];
+        return [const Color(0xFF10B981), const Color(0xFF059669)];
     }
   }
 
   Color _getBubbleColor() {
     switch (_state) {
       case BubbleState.idle:
-        return Colors.deepPurple.withValues(alpha: 0.8);
+        return const Color(0xFF7C3AED).withValues(alpha: 0.8);
       case BubbleState.recording:
-        return Colors.red.withValues(alpha: 0.9);
+        return const Color(0xFFEF4444).withValues(alpha: 0.9);
       case BubbleState.processing:
-        return Colors.orange.withValues(alpha: 0.9);
+        return const Color(0xFFF59E0B).withValues(alpha: 0.9);
       case BubbleState.response:
-        return Colors.green.withValues(alpha: 0.9);
+        return const Color(0xFF10B981).withValues(alpha: 0.9);
     }
   }
 

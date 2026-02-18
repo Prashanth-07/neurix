@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/subscription_service.dart';
+import '../utils/constants.dart';
+import '../widgets/starfield_background.dart';
 
 class UpgradeScreen extends StatefulWidget {
   final String? limitReachedType; // 'memory' or 'reminder' if shown due to limit
@@ -24,16 +26,19 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.background,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: const Icon(Icons.close, color: AppColors.text),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: ChangeNotifierProvider.value(
+      body: StarfieldBackground(
+        child: SafeArea(
+          child: ChangeNotifierProvider.value(
         value: SubscriptionService(),
         child: Consumer<SubscriptionService>(
           builder: (context, subscription, child) {
@@ -46,7 +51,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                   const Icon(
                     Icons.workspace_premium,
                     size: 80,
-                    color: Colors.amber,
+                    color: AppColors.warning,
                   ),
                   const SizedBox(height: 16),
                   const Text(
@@ -67,13 +72,13 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.2),
+                        color: AppColors.warning.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.orange.withOpacity(0.5)),
+                        border: Border.all(color: AppColors.warning.withOpacity(0.3)),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.warning_amber, color: Colors.orange),
+                          const Icon(Icons.warning_amber, color: AppColors.warning),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
@@ -81,7 +86,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                                   ? 'You\'ve reached the free limit of ${SubscriptionLimits.freeMemories} memories'
                                   : 'You\'ve reached the free limit of ${SubscriptionLimits.freeReminders} reminders',
                               style: const TextStyle(
-                                color: Colors.orange,
+                                color: AppColors.warning,
                                 fontSize: 14,
                               ),
                             ),
@@ -95,7 +100,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                       'Unlock unlimited memories and reminders',
                       style: TextStyle(
                         fontSize: 16,
-                        color: Colors.grey,
+                        color: AppColors.textSecondary,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -108,7 +113,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
 
                   // Pricing options
                   if (subscription.status == SubscriptionStatus.loading)
-                    const CircularProgressIndicator(color: Colors.green)
+                    const CircularProgressIndicator(color: AppColors.success)
                   else if (subscription.isPro)
                     _buildAlreadyProCard()
                   else
@@ -122,7 +127,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         subscription.errorMessage!,
-                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                        style: const TextStyle(color: AppColors.error, fontSize: 12),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -138,14 +143,14 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Subscription restored!'),
-                              backgroundColor: Colors.green,
+                              backgroundColor: AppColors.success,
                             ),
                           );
                         }
                       },
                       child: const Text(
                         'Restore Purchases',
-                        style: TextStyle(color: Colors.grey),
+                        style: const TextStyle(color: AppColors.textSecondary),
                       ),
                     ),
 
@@ -155,7 +160,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                   const Text(
                     'Subscriptions auto-renew unless cancelled at least 24 hours before the end of the current period. Manage subscriptions in your Play Store settings.',
                     style: TextStyle(
-                      color: Colors.grey,
+                      color: AppColors.textSecondary,
                       fontSize: 11,
                     ),
                     textAlign: TextAlign.center,
@@ -166,6 +171,8 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
           },
         ),
       ),
+        ),
+      ),
     );
   }
 
@@ -173,8 +180,9 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.grey[900],
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.glass,
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+        border: Border.all(color: AppColors.glassBorder),
       ),
       child: Column(
         children: [
@@ -183,19 +191,19 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
             '${SubscriptionLimits.freeMemories}',
             'Unlimited',
           ),
-          const Divider(color: Colors.grey, height: 24),
+          Divider(color: AppColors.glassBorder, height: 24),
           _buildFeatureRow(
             'Reminders',
             '${SubscriptionLimits.freeReminders}',
             'Unlimited',
           ),
-          const Divider(color: Colors.grey, height: 24),
+          Divider(color: AppColors.glassBorder, height: 24),
           _buildFeatureRow(
             'Voice Commands',
             'Yes',
             'Yes',
           ),
-          const Divider(color: Colors.grey, height: 24),
+          Divider(color: AppColors.glassBorder, height: 24),
           _buildFeatureRow(
             'Cloud Sync',
             'Yes',
@@ -214,7 +222,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
           child: Text(
             feature,
             style: const TextStyle(
-              color: Colors.white,
+              color: AppColors.text,
               fontSize: 14,
             ),
           ),
@@ -222,8 +230,8 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
         Expanded(
           child: Text(
             free,
-            style: TextStyle(
-              color: Colors.grey[400],
+            style: const TextStyle(
+              color: AppColors.textSecondary,
               fontSize: 14,
             ),
             textAlign: TextAlign.center,
@@ -234,14 +242,14 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (pro == 'Unlimited')
-                const Icon(Icons.all_inclusive, color: Colors.green, size: 18)
+                const Icon(Icons.all_inclusive, color: AppColors.success, size: 18)
               else
-                const Icon(Icons.check, color: Colors.green, size: 18),
+                const Icon(Icons.check, color: AppColors.success, size: 18),
               const SizedBox(width: 4),
               Text(
                 pro == 'Unlimited' ? '' : pro,
                 style: const TextStyle(
-                  color: Colors.green,
+                  color: AppColors.success,
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
@@ -297,10 +305,10 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isRecommended ? Colors.green.withOpacity(0.1) : Colors.grey[900],
-          borderRadius: BorderRadius.circular(16),
+          color: isRecommended ? AppColors.success.withOpacity(0.08) : AppColors.glass,
+          borderRadius: BorderRadius.circular(AppSizes.borderRadius),
           border: Border.all(
-            color: isRecommended ? Colors.green : Colors.grey[700]!,
+            color: isRecommended ? AppColors.success.withOpacity(0.5) : AppColors.glassBorder,
             width: isRecommended ? 2 : 1,
           ),
         ),
@@ -315,7 +323,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                       Text(
                         title,
                         style: TextStyle(
-                          color: isRecommended ? Colors.green : Colors.white,
+                          color: isRecommended ? AppColors.success : AppColors.text,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -328,7 +336,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.green,
+                            color: AppColors.success,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Text(
@@ -346,8 +354,8 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      color: Colors.grey[400],
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
                       fontSize: 12,
                     ),
                   ),
@@ -357,7 +365,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
             Text(
               price,
               style: TextStyle(
-                color: isRecommended ? Colors.green : Colors.white,
+                color: isRecommended ? AppColors.success : AppColors.text,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
@@ -365,7 +373,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
             const SizedBox(width: 8),
             Icon(
               Icons.arrow_forward_ios,
-              color: isRecommended ? Colors.green : Colors.grey,
+              color: isRecommended ? AppColors.success : AppColors.textHint,
               size: 16,
             ),
           ],
@@ -378,22 +386,22 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.green),
+        color: AppColors.success.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+        border: Border.all(color: AppColors.success.withOpacity(0.5)),
       ),
       child: Column(
         children: [
           const Icon(
             Icons.check_circle,
-            color: Colors.green,
+            color: AppColors.success,
             size: 48,
           ),
           const SizedBox(height: 16),
           const Text(
             'You\'re a Pro!',
             style: TextStyle(
-              color: Colors.green,
+              color: AppColors.success,
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
@@ -402,7 +410,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
           const Text(
             'Enjoy unlimited memories and reminders',
             style: TextStyle(
-              color: Colors.grey,
+              color: AppColors.textSecondary,
               fontSize: 14,
             ),
             textAlign: TextAlign.center,
@@ -412,7 +420,7 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text(
               'Back to App',
-              style: TextStyle(color: Colors.green),
+              style: TextStyle(color: AppColors.success),
             ),
           ),
         ],

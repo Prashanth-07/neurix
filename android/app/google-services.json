@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "1026337369775-35ntt74p9o59aeqn2et2i8qv21s386ah.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.bunny.neuro",
+            "certificate_hash": "6ea6c1d604ed5ea7018c72a9c08729bec77fd9b6"
+          }
+        },
+        {
           "client_id": "1026337369775-qtl838912go7t9bl4906ir5e4q598c13.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

@@ -4,7 +4,18 @@
       "Bash(flutter pub get:*)",
       "Bash(flutter analyze:*)",
       "Bash(pip install:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(powershell -Command \"New-Item -ItemType Directory -Force -Path ''c:\\\\Users\\\\admin\\\\Desktop\\\\neurix-website\\\\public''; Copy-Item ''c:\\\\Users\\\\admin\\\\Desktop\\\\neurix\\\\assets\\\\icon\\\\neurixLogo.png'' -Destination ''c:\\\\Users\\\\admin\\\\Desktop\\\\neurix-website\\\\public\\\\logo.png''\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(keytool:*)",
+      "Bash(\"C:\\\\Program Files\\\\Android\\\\Android Studio\\\\jbr\\\\bin\\\\keytool.exe\":*)",
+      "Bash(flutter build:*)",
+      "Bash(dart run:*)",
+      "Bash(flutter clean:*)",
+      "Bash(copy:*)",
+      "Bash(flutter devices:*)"
     ]
   }
 }

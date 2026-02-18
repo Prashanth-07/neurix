@@ -70,7 +70,14 @@ class AuthService {
             _currentUser = null;
             _userController.add(null);
           } else {
-            // Convert Firebase User to UserModel
+            // If same user is already loaded, preserve custom profile data
+            // (avatar/name saved via our DB) that Firebase Auth may not have
+            if (_currentUser != null && _currentUser!.uid == firebaseUser.uid) {
+              _updateAuthStatus(AuthStatus.authenticated);
+              return;
+            }
+
+            // New user sign-in: create UserModel from Firebase Auth
             final userModel = UserModel(
               uid: firebaseUser.uid,
               email: firebaseUser.email ?? '',
@@ -122,7 +129,10 @@ class AuthService {
       if (_auth.currentUser != null) {
         print('User already logged in: ${_auth.currentUser!.email}');
         final firebaseUser = _auth.currentUser!;
-        final userModel = UserModel(
+
+        // Try loading saved profile from local/cloud DB first (has custom avatar/name)
+        UserModel? savedUser = await _syncService.getUser(firebaseUser.uid);
+        final userModel = savedUser ?? UserModel(
           uid: firebaseUser.uid,
           email: firebaseUser.email ?? '',
           displayName: firebaseUser.displayName,
@@ -342,7 +352,21 @@ class AuthService {
         }
       } else {
         // Mobile platform - use normal sign in
-        googleUser = await _googleSignIn!.signIn();
+        try {
+          googleUser = await _googleSignIn!.signIn();
+        } catch (e) {
+          if (e.toString().contains('network_error') ||
+              e.toString().contains('ApiException: 7') ||
+              e.toString().contains('SocketException') ||
+              e.toString().contains('Failed host lookup')) {
+            _updateAuthStatus(AuthStatus.error);
+            return AuthResult(
+              success: false,
+              message: 'No internet connection. Please check your network and try again.',
+            );
+          }
+          rethrow;
+        }
       }
 
       if (googleUser == null) {
@@ -397,6 +421,17 @@ class AuthService {
         print('Google sign-in error: $e');
         _updateAuthStatus(AuthStatus.error);
 
+        // Check for network-related errors
+        if (e.toString().contains('network_error') ||
+            e.toString().contains('ApiException: 7') ||
+            e.toString().contains('SocketException') ||
+            e.toString().contains('Failed host lookup')) {
+          return AuthResult(
+            success: false,
+            message: 'No internet connection. Please check your network and try again.',
+          );
+        }
+
         return AuthResult(
           success: false,
           message: 'Google sign-in failed: $e',
@@ -447,8 +482,16 @@ class AuthService {
       
       // Update Firebase profile if needed
       if (displayName != null || photoUrl != null) {
-        await _auth.currentUser?.updateDisplayName(displayName);
-        await _auth.currentUser?.updatePhotoURL(photoUrl);
+        try {
+          await _auth.currentUser?.updateDisplayName(displayName);
+          await _auth.currentUser?.updatePhotoURL(photoUrl);
+        } catch (e) {
+          // Ignore PigeonUserInfo type cast error - known firebase_auth plugin bug
+          // The update still succeeds on Firebase's side
+          if (!e.toString().contains('PigeonUserInfo')) {
+            rethrow;
+          }
+        }
       }
       
       // Update local user model
@@ -462,7 +505,7 @@ class AuthService {
       UserRegistrationResult result = await _syncService.registerUser(updatedUser);
       
       if (result.success) {
-        _updateUser(updatedUser);
+        _updateUser(updatedUser, force: true);
         print('User profile updated successfully');
         return true;
       } else {
@@ -477,8 +520,8 @@ class AuthService {
   }
 
   // Update current user and notify listeners
-  void _updateUser(UserModel? user) {
-    if (_currentUser?.uid != user?.uid) { // Only update if user actually changed
+  void _updateUser(UserModel? user, {bool force = false}) {
+    if (force || _currentUser?.uid != user?.uid) {
       _currentUser = user;
       _userController.add(user);
     }
@@ -537,7 +580,10 @@ class AuthService {
   Future<void> refreshUserData() async {
     if (_auth.currentUser != null) {
       final firebaseUser = _auth.currentUser!;
-      final userModel = UserModel(
+
+      // Load saved profile from DB (has custom avatar/name)
+      UserModel? savedUser = await _syncService.getUser(firebaseUser.uid);
+      final userModel = savedUser ?? UserModel(
         uid: firebaseUser.uid,
         email: firebaseUser.email ?? '',
         displayName: firebaseUser.displayName,
