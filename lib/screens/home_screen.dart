@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,7 @@ import '../services/embedding_service.dart';
 import '../services/llm_service.dart';
 import '../services/reminder_service.dart';
 import '../services/subscription_service.dart';
+import '../services/wake_word_service.dart';
 import '../models/user_model.dart';
 import '../models/memory_model.dart';
 import '../models/reminder_model.dart';
@@ -22,6 +24,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'all_memories_screen.dart';
 import 'reminders_screen.dart';
 import 'upgrade_screen.dart';
+import 'wake_word_setup_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -34,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final NotificationService _notificationService = NotificationService();
   final ReminderService _reminderService = ReminderService();
   final SubscriptionService _subscriptionService = SubscriptionService();
+  final WakeWordService _wakeWordService = WakeWordService();
 
   // Speech recognition
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -56,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _initializeSubscriptionService();
     _initSpeech();
     _initTts();
+    _initWakeWordService();
   }
 
   Future<void> _initializeSubscriptionService() async {
@@ -128,6 +133,75 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _tts.setVolume(1.0);
   }
 
+  Future<void> _initWakeWordService() async {
+    _wakeWordService.onWakeWordDetected = _onWakeWordDetected;
+    await _wakeWordService.initialize();
+    if (mounted) setState(() {});
+
+    // Show enrollment screen if not yet enrolled
+    if (_wakeWordService.isInitialized && !_wakeWordService.isEnrolled) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) _showEnrollmentScreen();
+    }
+  }
+
+  Future<void> _showEnrollmentScreen() async {
+    await _wakeWordService.pause();
+    if (!mounted) return;
+
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const WakeWordSetupScreen(),
+      ),
+    );
+
+    if (mounted) {
+      if (result == true) {
+        await _wakeWordService.resume();
+      } else {
+        await _wakeWordService.resume();
+      }
+      setState(() {});
+    }
+  }
+
+  Future<void> _onWakeWordDetected() async {
+    if (!mounted || _isListening || _isProcessing) return;
+    print('[HomeScreen] Wake word "Hey Neurix" detected!');
+
+    // Get user's first name
+    final user = Provider.of<UserModel?>(context, listen: false);
+    final name = user?.displayName?.split(' ').first ?? 'there';
+
+    // Randomized greeting
+    final greetings = [
+      'Yes $name?',
+      'Hello $name, how can I help you?',
+      'Uh-huh?',
+      'Hey $name, what do you need?',
+      'I\'m listening, $name',
+      'What\'s up, $name?',
+      'Go ahead, $name',
+    ];
+    final greeting = greetings[Random().nextInt(greetings.length)];
+
+    // Show greeting in status text
+    setState(() {
+      _statusText = greeting;
+    });
+
+    // Speak greeting and wait for it to finish (can't overlap TTS + mic)
+    await _tts.awaitSpeakCompletion(true);
+    await _tts.speak(greeting);
+    await _tts.awaitSpeakCompletion(false);
+
+    // Start listening immediately after TTS (no extra delay)
+    if (mounted && !_isListening && !_isProcessing) {
+      _startListening();
+    }
+  }
+
   Future<void> _speak(String text) async {
     await _tts.speak(text);
   }
@@ -136,6 +210,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     print('[HomeScreen] ========================================');
     print('[HomeScreen] === STARTING LISTENING ===');
     print('[HomeScreen] ========================================');
+
+    // Pause wake word service if active (only one speech recognizer at a time)
+    if (_wakeWordService.isEnabled && !_wakeWordService.isListening) {
+      // Already paused (e.g. from wake word detection)
+    } else if (_wakeWordService.isEnabled) {
+      await _wakeWordService.pause();
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
 
     if (!_speechInitialized) {
       print('[HomeScreen] Speech not initialized, initializing...');
@@ -189,6 +271,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _statusText = 'Tap to speak';
       }
     });
+    _wakeWordService.resume();
   }
 
   /// ===========================================
@@ -198,7 +281,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// 2. Route to appropriate handler based on intent
   /// 3. Speak response and reset UI
   Future<void> _processVoiceInput() async {
-    if (_transcribedText.isEmpty) return;
+    if (_transcribedText.isEmpty) {
+      _wakeWordService.resume();
+      return;
+    }
 
     // Prevent duplicate processing - both onStatus and onResult can trigger this
     if (_hasProcessedCurrentInput) {
@@ -246,6 +332,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           response = 'Okay, cancelled.';
           await _speak(response);
           setState(() { _statusText = 'Tap to speak'; _transcribedText = ''; });
+          _wakeWordService.resume();
           return;
         }
       } else if (intent == 'search') {
@@ -272,6 +359,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           response = 'Okay, cancelled.';
           await _speak(response);
           setState(() { _statusText = 'Tap to speak'; _transcribedText = ''; });
+          _wakeWordService.resume();
           return;
         }
       } else if (intent == 'cancel_reminder') {
@@ -301,12 +389,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted) {
         setState(() { _statusText = 'Tap to speak'; _transcribedText = ''; });
       }
+      _wakeWordService.resume();
     } catch (e) {
       print('[FLOW] ERROR: $e');
       setState(() { _statusText = 'Something went wrong'; _isProcessing = false; });
       await _speak('Sorry, something went wrong.');
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) setState(() { _statusText = 'Tap to speak'; });
+      _wakeWordService.resume();
     }
   }
 
@@ -329,7 +419,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         // App came to foreground - ensure notification is visible
-        _notificationService.showVoiceNotification();
+        _notificationService.showVoiceNotification(
+          title: 'Neurix',
+          body: _wakeWordService.isEnabled ? '"Hey Neurix" is active' : 'Tap to speak',
+        );
+
+        // Resume wake word listening when app comes to foreground
+        if (_wakeWordService.isEnabled && !_isListening && !_isProcessing) {
+          _wakeWordService.resume();
+        }
 
         // Check if we have a pending mic press from notification
         if (_pendingMicFromNotification) {
@@ -344,12 +442,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
         break;
       case AppLifecycleState.paused:
-        // App went to background - notification should persist (ongoing: true)
-        // Re-show to ensure it's still there
-        _notificationService.showVoiceNotification();
+        // App went to background - pause wake word to save battery
+        _wakeWordService.pause();
+        // Re-show notification
+        _notificationService.showVoiceNotification(
+          title: 'Neurix',
+          body: _wakeWordService.isEnabled ? '"Hey Neurix" is active' : 'Tap to speak',
+        );
         break;
       case AppLifecycleState.detached:
-        // App is being terminated - cancel all notifications
+        // App is being terminated - stop everything
+        _wakeWordService.stop();
         _notificationService.cancelAllNotifications();
         break;
       case AppLifecycleState.inactive:
@@ -382,7 +485,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _notificationService.onMicPressed = _handleNotificationMicPress;
 
     // Show the persistent voice control notification
-    await _notificationService.showVoiceNotification();
+    await _notificationService.showVoiceNotification(
+      title: 'Neurix',
+      body: _wakeWordService.isEnabled ? '"Hey Neurix" is active' : 'Tap to speak',
+    );
     print('[HomeScreen] Notification service initialized');
   }
 
@@ -415,6 +521,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     print('[HomeScreen] ========================================');
     print('[HomeScreen] === STARTING LISTENING (from notification) ===');
     print('[HomeScreen] ========================================');
+
+    // Pause wake word service if active
+    if (_wakeWordService.isEnabled) {
+      await _wakeWordService.pause();
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
 
     if (!_speechInitialized) {
       print('[HomeScreen] Speech not initialized, initializing...');
@@ -878,6 +990,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(height: AppSizes.paddingLarge * 1.5),
 
+                // Hey Neurix Wake Word Toggle
+                _buildWakeWordCard(),
+                const SizedBox(height: AppSizes.paddingMedium),
+
                 // Subscription Status Card
                 _buildSubscriptionCard(),
                 const SizedBox(height: AppSizes.paddingMedium),
@@ -956,6 +1072,87 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         user: user,
         authService: authService,
         googlePhotoUrl: googlePhotoUrl,
+      ),
+    );
+  }
+
+  Widget _buildWakeWordCard() {
+    final isActive = _wakeWordService.isEnabled;
+    final isListening = _wakeWordService.isListening;
+    final hasError = _wakeWordService.errorMessage != null;
+
+    return GlassCard(
+      backgroundColor: isActive && isListening ? AppColors.success.withOpacity(0.06) : null,
+      borderColor: isActive && isListening ? AppColors.success.withOpacity(0.15) : null,
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: (isActive && isListening ? AppColors.success : AppColors.primary).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.record_voice_over_rounded,
+              color: isActive && isListening ? AppColors.success : AppColors.primary,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: AppSizes.paddingMedium),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '"Hey Neurix"',
+                  style: AppTextStyles.subheading,
+                ),
+                Text(
+                  isActive && isListening
+                      ? _wakeWordService.isEnrolled
+                          ? 'Listening (voice enrolled)'
+                          : 'Listening for wake word...'
+                      : isActive && hasError
+                          ? _wakeWordService.errorMessage!
+                          : 'Voice activation disabled',
+                  style: AppTextStyles.caption.copyWith(
+                    color: isActive && isListening
+                        ? AppColors.success
+                        : isActive && hasError
+                            ? AppColors.warning
+                            : null,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_wakeWordService.isEnrolled)
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded, size: 20),
+              color: AppColors.textSecondary,
+              tooltip: 'Re-enroll voice',
+              onPressed: () async {
+                await _wakeWordService.clearEnrollment();
+                _showEnrollmentScreen();
+              },
+            ),
+          Switch(
+            value: isActive,
+            onChanged: (value) async {
+              await _wakeWordService.setEnabled(value);
+              setState(() {});
+              _notificationService.showVoiceNotification(
+                title: 'Neurix',
+                body: value && _wakeWordService.isListening
+                    ? '"Hey Neurix" is active'
+                    : 'Tap to speak',
+              );
+            },
+            activeColor: AppColors.success,
+            activeTrackColor: AppColors.success.withOpacity(0.3),
+          ),
+        ],
       ),
     );
   }

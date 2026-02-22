@@ -15,7 +15,23 @@
       "Bash(dart run:*)",
       "Bash(flutter clean:*)",
       "Bash(copy:*)",
-      "Bash(flutter devices:*)"
+      "Bash(flutter devices:*)",
+      "WebFetch(domain:pub.dev)",
+      "WebFetch(domain:picovoice.ai)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:deepcorelabs.com)",
+      "WebFetch(domain:colab.research.google.com)",
+      "Bash(curl:*)",
+      "WebFetch(domain:community.rhasspy.org)",
+      "Bash(ls:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:openwakeword.com)",
+      "WebFetch(domain:llama-assistant.nrl.ai)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:tderflinger.github.io)",
+      "WebFetch(domain:noerguerra.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "Bash(/c/Users/admin/AppData/Local/Programs/Python/Python311/python.exe:*)"
     ]
   }
 }

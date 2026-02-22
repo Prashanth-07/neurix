@@ -60,6 +60,7 @@ dependencies:
   # Voice Features
   speech_to_text: ^7.0.0
   flutter_tts: ^4.0.2
+  record: ^6.0.0
   permission_handler: ^11.3.1
   path_provider: ^2.1.5
   flutter_dotenv: ^5.2.1
@@ -138,6 +139,7 @@ flutter:
     - assets/sounds/
     - assets/models/
     - assets/icon/
+    - assets/wake_word/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
