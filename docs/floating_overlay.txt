@@ -1,0 +1,106 @@
+FLOATING OVERLAY BUBBLE
+========================
+
+1. WHAT IT DOES
+   Neurix can display a small floating bubble on top of other apps,
+   letting the user interact with the assistant without switching back
+   to the Neurix app. The bubble appears as a draggable circle on the
+   screen edge and can expand for quick voice commands.
+
+2. BIG PICTURE
+
+   User enables overlay → floating bubble appears
+       → bubble sits on top of all apps
+       → user taps bubble → expands for voice input
+       → user speaks → processes command → shows result
+       → bubble collapses back to small circle
+
+   Package: flutter_overlay_window
+   Runs in a separate isolate (overlay_main.dart entry point).
+
+3. PERMISSIONS
+
+   Android requires SYSTEM_ALERT_WINDOW permission for overlays.
+   This is a special permission that must be granted in system settings.
+
+   Flow:
+     1. checkPermission() → checks if overlay permission granted
+     2. If not granted → requestPermission() → opens system settings
+     3. User toggles "Allow display over other apps"
+     4. Permission granted → overlay can be started
+
+4. OVERLAY LIFECYCLE
+
+   Start:
+     OverlayService.startOverlay()
+       → Creates a 100x100 pixel window
+       → Positioned on the right side of screen
+       → Runs FloatingBubble widget via overlay_main.dart entry point
+
+   Stop:
+     OverlayService.stopOverlay()
+       → Closes the overlay window
+       → Cleans up resources
+
+   Toggle:
+     OverlayService.toggleOverlay()
+       → If showing → stop
+       → If not showing → start
+
+5. OVERLAY ENTRY POINT
+
+   The overlay runs in a SEPARATE Dart isolate from the main app.
+   Entry point: overlay_main.dart with @pragma('vm:entry-point')
+
+   This means:
+     - Separate memory space from main app
+     - Communication via flutter_overlay_window data channel
+     - Cannot directly access main app's providers/state
+     - Has its own MaterialApp with FloatingBubble widget
+
+6. COMMUNICATION
+
+   Main app → Overlay:
+     OverlayService.sendResponseToOverlay(data)
+       → Sends processed response back to the bubble
+
+   Overlay → Main app:
+     _startListeningForData() listens for events from overlay
+       → onOverlayData callback fires with user's input
+
+   This two-way channel allows the bubble to send voice commands
+   and receive responses without direct memory sharing.
+
+7. DYNAMIC RESIZING
+
+   The overlay can resize based on state:
+     Collapsed: 100x100 pixels (small bubble)
+     Expanded: 300x200 pixels (shows voice UI / response)
+
+   OverlayService.resizeOverlay(width, height)
+     → Resizes the overlay window dynamically
+
+8. EDGE CASES
+
+   - Permission not granted → overlay won't start, user prompted
+   - User revokes permission → overlay stops working
+   - Overlay already showing → startOverlay() is no-op
+   - App killed → overlay disappears (tied to app process)
+   - Multiple overlays → prevented by isOverlayShowing() check
+
+9. EXAMPLE SCENARIO
+
+   User is reading in Chrome → wants to save a note
+     → Taps floating Neurix bubble
+     → Bubble expands to show mic interface
+     → User: "Remember that the meeting is at 3pm"
+     → Overlay sends text to main app via data channel
+     → Main app processes → saves memory
+     → Response sent back to overlay: "Got it!"
+     → Bubble collapses back to small circle
+     → User continues reading in Chrome
+
+FILES
+-----
+  lib/services/overlay_service.dart  → OverlayService (singleton)
+  lib/overlay_main.dart              → Overlay isolate entry point

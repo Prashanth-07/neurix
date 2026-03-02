@@ -3,16 +3,18 @@ Train a custom "Hey Neurix" wake word model for OpenWakeWord.
 
 This script:
   1. Generates synthetic "hey neurix" audio using edge-tts + audio augmentation
-  2. Generates negative samples (random phrases, noise)
-  3. Extracts speech embeddings via OpenWakeWord's feature pipeline
-  4. Trains a small classifier (FCN) on the embeddings
-  5. Exports the model to ONNX format for Flutter
+  2. Loads real user enrollment recordings (if available)
+  3. Generates hard negative samples (phonetically similar phrases, conversation, music)
+  4. Extracts speech embeddings via OpenWakeWord's feature pipeline
+  5. Trains a small classifier (FCN) on the embeddings
+  6. Exports the model to ONNX format for Flutter
 
 Usage:
   python tools/train_wake_word.py
+  python tools/train_wake_word.py --enrollment-dir /path/to/enrollment
 
 Output:
-  assets/models/hey_neurix.onnx  (drop-in replacement for hey_jarvis_v0.1.onnx)
+  assets/models/hey_neurix.onnx
 """
 
 import os
@@ -24,19 +26,26 @@ import random
 import shutil
 import asyncio
 import tempfile
+import argparse
 import subprocess
 import numpy as np
 
 # ─── Configuration ───
 SAMPLE_RATE = 16000
+
+# Positive phrase variations (phonetic spellings for TTS diversity)
 POSITIVE_VARIATIONS = [
     "hey neurix",
     "hey new rix",
     "hey nurix",
     "hey neuricks",
+    "hey neuerix",
+    "hey nuerix",
 ]
-# Edge-TTS voices for diversity
+
+# Edge-TTS voices for diversity (male, female, different accents)
 EDGE_VOICES = [
+    # US English
     "en-US-GuyNeural",
     "en-US-JennyNeural",
     "en-US-AriaNeural",
@@ -52,27 +61,77 @@ EDGE_VOICES = [
     "en-US-MonicaNeural",
     "en-US-RogerNeural",
     "en-US-SteffanNeural",
+    # UK English
     "en-GB-RyanNeural",
     "en-GB-SoniaNeural",
+    "en-GB-ThomasNeural",
+    "en-GB-LibbyNeural",
+    # Australian English
     "en-AU-NatashaNeural",
     "en-AU-WilliamNeural",
+    # Indian English
     "en-IN-NeerjaNeural",
     "en-IN-PrabhatNeural",
+    # Other accents
+    "en-IE-ConnorNeural",
+    "en-IE-EmilyNeural",
+    "en-ZA-LeahNeural",
+    "en-ZA-LukeNeural",
 ]
-NEGATIVE_PHRASES = [
-    "hey google", "hey siri", "alexa", "hey jarvis",
+
+# ─── Hard Negatives ───
+# Phonetically similar phrases (most likely to cause false triggers)
+HARD_NEGATIVE_PHRASES = [
     "hey matrix", "hey lyrics", "hey new tricks",
-    "hello world", "good morning", "what time is it",
+    "hey new rex", "hey neural", "hey neutrons",
+    "hey patrick", "hey derek", "hey felix",
+    "hey noorix", "hey numerix", "hey eurix",
+    "hey new risk", "hey new mix", "hey new fix",
+    "hey norex", "hey nurex", "hey nutrient",
+    "hey google", "hey siri", "alexa",
+    "hey jarvis", "hey cortana", "hey bixby",
+    "hey there", "hey you", "hey buddy",
+    "hey dude", "hey man", "hey girl",
+    "hey wait", "hey look", "hey listen",
+    "hey new", "hey no", "hey now",
+]
+
+# General conversation (should never trigger)
+CONVERSATION_PHRASES = [
+    "hello world", "good morning", "good night",
+    "what time is it", "how are you", "nice to meet you",
     "turn off the lights", "play some music", "set a timer",
     "open the door", "call mom", "send a message",
     "the weather today", "remind me later", "take a note",
-    "how are you", "nice to meet you", "thank you",
-    "hey there", "excuse me", "nevermind",
-    "hey patrick", "hey derek", "hey felix",
-    "hey new rex", "hey neural", "hey neutrons",
+    "thank you very much", "excuse me please", "nevermind",
+    "I need to go now", "see you later", "goodbye",
+    "can you help me", "what is this", "where is that",
+    "tell me a joke", "read my email", "check the news",
+    "order some food", "book a ride", "find a restaurant",
+    "what's the score", "who won the game", "turn up the volume",
+    "I'm going to the store", "pick up the kids", "meeting at three",
+    "the project is done", "let me think about it", "sounds good",
+    "I agree with you", "that's interesting", "absolutely not",
+    "maybe tomorrow", "I don't think so", "let's do it",
+    "one two three four five", "a b c d e f g",
+    "testing testing one two three",
+    "the quick brown fox jumps over the lazy dog",
+    "I love programming", "machine learning is great",
+    "artificial intelligence", "deep neural network",
+    "natural language processing", "computer vision",
 ]
-NUM_AUGMENTATIONS = 6  # augmentations per base positive sample
-EPOCHS = 15
+
+# Short utterances and sounds (common false trigger sources)
+SHORT_UTTERANCES = [
+    "yes", "no", "ok", "sure", "right",
+    "um", "uh", "hmm", "ah", "oh",
+    "hi", "bye", "hey", "yo", "sup",
+    "wow", "cool", "nice", "great", "fine",
+    "stop", "go", "wait", "come", "help",
+]
+
+NUM_AUGMENTATIONS = 8  # augmentations per base positive sample
+EPOCHS = 25
 BATCH_SIZE = 64
 LEARNING_RATE = 0.001
 THRESHOLD = 0.5
@@ -145,6 +204,18 @@ def load_wav(path):
     return data
 
 
+def load_pcm_file(path):
+    """Load a raw Int16 PCM file saved by the enrollment screen."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+        data = np.frombuffer(raw, dtype=np.int16)
+        return data.astype(np.float32) / 32767.0
+    except Exception as e:
+        print(f"  Warning: could not load PCM file {path}: {e}")
+        return None
+
+
 def augment_audio(audio, sr=SAMPLE_RATE):
     """Apply random augmentation to an audio clip."""
     from scipy.signal import resample
@@ -156,47 +227,83 @@ def augment_audio(audio, sr=SAMPLE_RATE):
         augmented = resample(augmented, int(len(augmented) / speed)).astype(np.float32)
 
     # Pitch shift via resampling
-    pitch = random.uniform(-2, 2)
+    pitch = random.uniform(-3, 3)
     if abs(pitch) > 0.1:
         factor = 2.0 ** (pitch / 12.0)
         stretched = resample(augmented, int(len(augmented) / factor)).astype(np.float32)
         augmented = resample(stretched, len(augmented)).astype(np.float32)
 
-    # Volume change
-    augmented *= random.uniform(0.5, 1.5)
+    # Volume change (wider range)
+    augmented *= random.uniform(0.3, 2.0)
 
-    # Add noise
-    noise_level = random.uniform(0.0, 0.02)
+    # Add noise (various levels)
+    noise_level = random.uniform(0.0, 0.04)
     augmented += np.random.randn(len(augmented)).astype(np.float32) * noise_level
 
-    # Random padding
-    pad_before = int(random.uniform(0, 0.3) * sr)
-    pad_after = int(random.uniform(0, 0.3) * sr)
+    # Random padding (simulate different positions in buffer)
+    pad_before = int(random.uniform(0, 0.5) * sr)
+    pad_after = int(random.uniform(0, 0.5) * sr)
     augmented = np.concatenate([
         np.zeros(pad_before, dtype=np.float32),
         augmented,
         np.zeros(pad_after, dtype=np.float32),
     ])
 
+    # Random time masking (simulate partial word)
+    if random.random() < 0.2:
+        mask_len = int(random.uniform(0.05, 0.15) * len(augmented))
+        mask_start = random.randint(0, max(0, len(augmented) - mask_len))
+        augmented[mask_start:mask_start + mask_len] *= random.uniform(0.0, 0.1)
+
     return np.clip(augmented, -1.0, 1.0)
 
 
 def generate_noise_clip(duration_sec=1.5, sr=SAMPLE_RATE):
-    """Generate a random noise clip."""
+    """Generate a random noise/silence clip."""
     n = int(duration_sec * sr)
-    t = random.choice(["white", "silence"])
+    t = random.choice(["white", "pink", "silence", "hum"])
     if t == "white":
         return np.random.randn(n).astype(np.float32) * random.uniform(0.01, 0.1)
+    elif t == "pink":
+        # Simple pink noise approximation
+        white = np.random.randn(n).astype(np.float32)
+        b = np.array([0.049922035, -0.095993537, 0.050612699, -0.004709510])
+        a = np.array([1.0, -2.494956002, 2.017265875, -0.522189400])
+        from scipy.signal import lfilter
+        pink = lfilter(b, a, white).astype(np.float32)
+        return pink * random.uniform(0.01, 0.1)
+    elif t == "hum":
+        # 50/60Hz hum simulation
+        freq = random.choice([50, 60, 100, 120])
+        t_arr = np.linspace(0, duration_sec, n, dtype=np.float32)
+        hum = np.sin(2 * np.pi * freq * t_arr) * random.uniform(0.01, 0.05)
+        hum += np.random.randn(n).astype(np.float32) * 0.005
+        return hum
     else:
         return np.random.randn(n).astype(np.float32) * 0.001
 
 
-async def generate_training_data(tmp_dir):
-    """Generate positive and negative audio clips using edge-tts."""
+async def generate_training_data(tmp_dir, enrollment_dir=None):
+    """Generate positive and negative audio clips."""
     positive_clips = []
     negative_clips = []
 
-    # ─── Positive samples ───
+    # ─── Real enrollment recordings (highest priority) ───
+    if enrollment_dir and os.path.exists(enrollment_dir):
+        print("\n[STEP 0] Loading real enrollment recordings...")
+        pcm_files = sorted([f for f in os.listdir(enrollment_dir) if f.endswith(".pcm")])
+        real_count = 0
+        for fname in pcm_files:
+            audio = load_pcm_file(os.path.join(enrollment_dir, fname))
+            if audio is not None and len(audio) > SAMPLE_RATE * 0.3:
+                positive_clips.append(audio)
+                real_count += 1
+                # Heavy augmentation of real recordings (most valuable data)
+                for _ in range(NUM_AUGMENTATIONS * 3):
+                    positive_clips.append(augment_audio(audio))
+        print(f"  Real recordings: {real_count} (+ {real_count * NUM_AUGMENTATIONS * 3} augmented)")
+
+    # ─── Synthetic positive samples ───
     print("\n[STEP 1] Generating positive samples ('hey neurix')...")
     count = 0
     for voice in EDGE_VOICES:
@@ -210,27 +317,47 @@ async def generate_training_data(tmp_dir):
                     if audio is not None and len(audio) > SAMPLE_RATE * 0.3:
                         positive_clips.append(audio)
                         count += 1
-            except Exception as e:
-                pass  # Some voices may fail, that's OK
+            except Exception:
+                pass
 
-    print(f"  Base positive clips: {count}")
+    print(f"  Base synthetic positive clips: {count}")
 
-    # Augment
-    base = list(positive_clips)
-    for clip in base:
+    # Augment synthetic positives
+    synthetic_base = positive_clips[-count:] if count > 0 else []
+    for clip in synthetic_base:
         for _ in range(NUM_AUGMENTATIONS):
             positive_clips.append(augment_audio(clip))
     print(f"  Total positive (after augmentation): {len(positive_clips)}")
 
-    # ─── Negative samples ───
-    print("\n[STEP 2] Generating negative samples...")
+    # ─── Hard negative samples (phonetically similar) ───
+    print("\n[STEP 2a] Generating hard negative samples (phonetically similar)...")
     count = 0
-    # Use a subset of voices for negatives (faster)
-    neg_voices = EDGE_VOICES[:6]
-    for voice in neg_voices:
-        for phrase in NEGATIVE_PHRASES:
-            mp3_path = os.path.join(tmp_dir, f"neg_{count}.mp3")
-            wav_path = os.path.join(tmp_dir, f"neg_{count}.wav")
+    for voice in EDGE_VOICES[:12]:  # Use more voices for negatives
+        for phrase in HARD_NEGATIVE_PHRASES:
+            mp3_path = os.path.join(tmp_dir, f"hard_neg_{count}.mp3")
+            wav_path = os.path.join(tmp_dir, f"hard_neg_{count}.wav")
+            try:
+                await generate_tts_clip(phrase, voice, mp3_path)
+                if mp3_to_wav_16k(mp3_path, wav_path):
+                    audio = load_wav(wav_path)
+                    if audio is not None and len(audio) > SAMPLE_RATE * 0.3:
+                        negative_clips.append(audio)
+                        # Augment hard negatives more heavily
+                        for _ in range(3):
+                            negative_clips.append(augment_audio(audio))
+                        count += 1
+            except Exception:
+                pass
+    print(f"  Hard negative clips: {count} (+ augmented)")
+
+    # ─── General conversation negatives ───
+    print("\n[STEP 2b] Generating conversation negative samples...")
+    count = 0
+    conv_voices = EDGE_VOICES[:8]
+    for voice in conv_voices:
+        for phrase in CONVERSATION_PHRASES:
+            mp3_path = os.path.join(tmp_dir, f"conv_neg_{count}.mp3")
+            wav_path = os.path.join(tmp_dir, f"conv_neg_{count}.wav")
             try:
                 await generate_tts_clip(phrase, voice, mp3_path)
                 if mp3_to_wav_16k(mp3_path, wav_path):
@@ -241,13 +368,35 @@ async def generate_training_data(tmp_dir):
                         count += 1
             except Exception:
                 pass
+    print(f"  Conversation negative clips: {count}")
 
-    print(f"  TTS negative clips: {count}")
+    # ─── Short utterance negatives ───
+    print("\n[STEP 2c] Generating short utterance negatives...")
+    count = 0
+    for voice in EDGE_VOICES[:6]:
+        for phrase in SHORT_UTTERANCES:
+            mp3_path = os.path.join(tmp_dir, f"short_neg_{count}.mp3")
+            wav_path = os.path.join(tmp_dir, f"short_neg_{count}.wav")
+            try:
+                await generate_tts_clip(phrase, voice, mp3_path)
+                if mp3_to_wav_16k(mp3_path, wav_path):
+                    audio = load_wav(wav_path)
+                    if audio is not None and len(audio) > SAMPLE_RATE * 0.2:
+                        negative_clips.append(audio)
+                        count += 1
+            except Exception:
+                pass
+    print(f"  Short utterance clips: {count}")
 
-    # Add noise clips
-    for _ in range(200):
-        negative_clips.append(generate_noise_clip())
-    print(f"  Total negative: {len(negative_clips)}")
+    # ─── Noise clips ───
+    print("\n[STEP 2d] Generating noise clips...")
+    for _ in range(400):
+        negative_clips.append(generate_noise_clip(
+            duration_sec=random.uniform(1.0, 3.0)))
+    print(f"  Noise clips: 400")
+
+    print(f"\n  TOTAL positive: {len(positive_clips)}")
+    print(f"  TOTAL negative: {len(negative_clips)}")
 
     return positive_clips, negative_clips
 
@@ -259,7 +408,6 @@ def ensure_oww_models():
     models_dir = os.path.join(pkg_dir, "resources", "models")
     os.makedirs(models_dir, exist_ok=True)
 
-    # Use our already-downloaded models as source
     project_models = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "models")
 
     for name in ["melspectrogram.onnx", "embedding_model.onnx"]:
@@ -269,7 +417,6 @@ def ensure_oww_models():
             print(f"  Copying {name} to openwakeword resources...")
             shutil.copy2(src, dest)
         elif not os.path.exists(dest):
-            # Download from GitHub
             import urllib.request
             url = f"https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/{name}"
             print(f"  Downloading {name}...")
@@ -284,7 +431,7 @@ def extract_embeddings(clips, label_name=""):
     print(f"\n[STEP 3] Extracting {label_name} embeddings ({len(clips)} clips)...")
     F = AudioFeatures()
 
-    # Pad/trim all clips to 2.0 seconds (gives ~16 embedding windows to match hey_jarvis)
+    # Pad/trim all clips to 2.0 seconds
     target_len = int(2.0 * SAMPLE_RATE)
     padded = []
     for clip in clips:
@@ -295,7 +442,7 @@ def extract_embeddings(clips, label_name=""):
 
     audio_array = np.stack(padded)
 
-    # OpenWakeWord expects 16-bit integer PCM, not float32
+    # OpenWakeWord expects 16-bit integer PCM
     audio_int16 = (audio_array * 32767).clip(-32768, 32767).astype(np.int16)
     print(f"  Audio shape: {audio_int16.shape} (int16)")
 
@@ -329,13 +476,24 @@ def train_model(pos_features, neg_features):
     idx = torch.randperm(X.shape[0])
     X, y = X[idx], y[idx]
 
-    loader = DataLoader(TensorDataset(X, y), batch_size=BATCH_SIZE, shuffle=True)
+    # Split into train/val (90/10)
+    split = int(0.9 * X.shape[0])
+    X_train, X_val = X[:split], X[split:]
+    y_train, y_val = y[:split], y[split:]
 
+    loader = DataLoader(TensorDataset(X_train, y_train), batch_size=BATCH_SIZE, shuffle=True)
+
+    # Slightly larger model for better discrimination
     model = nn.Sequential(
         nn.Flatten(),
-        nn.Linear(n_win * n_feat, 64),
+        nn.Linear(n_win * n_feat, 128),
+        nn.LayerNorm(128),
+        nn.ReLU(),
+        nn.Dropout(0.2),
+        nn.Linear(128, 64),
         nn.LayerNorm(64),
         nn.ReLU(),
+        nn.Dropout(0.1),
         nn.Linear(64, 32),
         nn.LayerNorm(32),
         nn.ReLU(),
@@ -343,10 +501,16 @@ def train_model(pos_features, neg_features):
         nn.Sigmoid(),
     )
 
-    opt = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    opt = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS)
     bce = nn.BCELoss(reduction="none")
 
+    best_val_acc = 0.0
+    best_state = None
+
     for epoch in range(EPOCHS):
+        # Training
+        model.train()
         total_loss = correct = total = 0
         for bx, by in loader:
             opt.zero_grad()
@@ -362,7 +526,42 @@ def train_model(pos_features, neg_features):
             total_loss += loss.item() * bx.shape[0]
             correct += ((pred > THRESHOLD).float() == by).sum().item()
             total += by.shape[0]
-        print(f"  Epoch {epoch+1:2d}/{EPOCHS}: loss={total_loss/total:.4f} acc={correct/total*100:.1f}%")
+
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_pred = model(X_val)
+            val_correct = ((val_pred > THRESHOLD).float() == y_val).sum().item()
+            val_acc = val_correct / y_val.shape[0] * 100
+
+            # Per-class accuracy
+            val_pos_mask = y_val.flatten() == 1
+            val_neg_mask = y_val.flatten() == 0
+            if val_pos_mask.sum() > 0:
+                val_tp = ((val_pred[val_pos_mask] > THRESHOLD).float()).sum().item()
+                val_pos_acc = val_tp / val_pos_mask.sum().item() * 100
+            else:
+                val_pos_acc = 0.0
+            if val_neg_mask.sum() > 0:
+                val_tn = ((val_pred[val_neg_mask] <= THRESHOLD).float()).sum().item()
+                val_neg_acc = val_tn / val_neg_mask.sum().item() * 100
+            else:
+                val_neg_acc = 0.0
+
+        scheduler.step()
+
+        print(f"  Epoch {epoch+1:2d}/{EPOCHS}: loss={total_loss/total:.4f} "
+              f"train_acc={correct/total*100:.1f}% "
+              f"val_acc={val_acc:.1f}% (pos:{val_pos_acc:.1f}% neg:{val_neg_acc:.1f}%)")
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+
+    # Load best model
+    if best_state is not None:
+        model.load_state_dict(best_state)
+        print(f"\n  Best validation accuracy: {best_val_acc:.1f}%")
 
     return model, n_win, n_feat
 
@@ -397,22 +596,30 @@ def export_onnx(model, n_win, n_feat):
 
     test = np.random.randn(1, n_win, n_feat).astype(np.float32)
     result = sess.run(None, {"input": test})
-    print(f"  Test inference: {result[0][0][0]:.4f}")
+    print(f"  Test inference (random): {result[0][0][0]:.4f}")
 
 
 async def async_main():
+    parser = argparse.ArgumentParser(description="Train Hey Neurix wake word model")
+    parser.add_argument("--enrollment-dir", type=str, default=None,
+                       help="Path to enrollment directory with .pcm files")
+    args = parser.parse_args()
+
     start = time.time()
     print("=" * 60)
-    print("  OpenWakeWord Training: 'Hey Neurix'")
+    print("  OpenWakeWord Training: 'Hey Neurix' (Enhanced)")
     print("=" * 60)
 
     install_deps()
 
     tmp_dir = tempfile.mkdtemp(prefix="wakeword_")
     print(f"\n[INFO] Temp dir: {tmp_dir}")
+    if args.enrollment_dir:
+        print(f"[INFO] Enrollment dir: {args.enrollment_dir}")
 
     try:
-        pos_clips, neg_clips = await generate_training_data(tmp_dir)
+        pos_clips, neg_clips = await generate_training_data(
+            tmp_dir, enrollment_dir=args.enrollment_dir)
         pos_feat = extract_embeddings(pos_clips, "positive")
         neg_feat = extract_embeddings(neg_clips, "negative")
 
@@ -424,8 +631,7 @@ async def async_main():
         print(f"  Done! ({elapsed:.0f}s)")
         print(f"  Model: {OUTPUT_MODEL}")
         print(f"")
-        print(f"  Next: Update wake_word_service.dart _wwModelPath to")
-        print(f"  'assets/models/hey_neurix.onnx' and rebuild.")
+        print(f"  Rebuild Flutter app to use the new model.")
         print(f"{'=' * 60}")
 
     finally:

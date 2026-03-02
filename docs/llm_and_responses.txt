@@ -1,0 +1,196 @@
+LLM SERVICE & RESPONSE GENERATION
+====================================
+
+1. WHAT IT DOES
+   The LLM Service connects Neurix to a cloud language model for two tasks:
+     - Generating natural responses when searching memories
+     - Parsing reminder details from natural language
+
+   Intent detection runs on-device (see intent_classification.txt).
+   Only response generation and reminder parsing require the cloud LLM.
+
+2. BIG PICTURE
+
+   Three types of LLM calls in the app:
+
+   Call 1: Intent Detection (ON-DEVICE — no cloud)
+     Text → MobileBERT ONNX → intent label
+     Handled by IntentClassifierService, NOT Groq API.
+
+   Call 2: Response Generation (CLOUD)
+     Query + matched memories → Groq API → natural language answer
+     "Where are my keys?" + memories → "On the kitchen table"
+
+   Call 3: Reminder Parsing (CLOUD)
+     Voice text → Groq API → structured JSON with time/message/type
+     "Remind me to call mom at 4pm" → {type: oneTime, message: "Call mom", ...}
+
+3. GROQ API CONFIGURATION
+
+   Provider: Groq (https://api.groq.com)
+   Model: llama-3.1-8b-instant
+   Auth: Bearer token from GROQ_API_KEY in .env
+   Endpoint: /openai/v1/chat/completions (OpenAI-compatible)
+
+   Settings:
+     max_tokens: 150
+     temperature: 0.3 (low creativity, high accuracy)
+     top_p: 0.9
+     timeout: 30 seconds
+
+   Why Groq?
+     - Free tier available
+     - Very fast inference (built on custom hardware)
+     - OpenAI-compatible API (easy to switch providers)
+     - llama-3.1-8b-instant: small, fast, accurate enough
+
+4. CALL 2: RESPONSE GENERATION
+
+   When the user searches for a memory and results are found, the LLM
+   turns raw memory text into a natural conversational answer.
+
+   Input:
+     - query: "Where did I park my car?"
+     - memories: [
+         {content: "I parked my car on level 3", createdAt: today},
+         {content: "I parked at the mall lot", createdAt: 5 days ago}
+       ]
+
+   System prompt rules:
+     - Answer naturally as if you personally remember
+     - Use MOST RECENT memory if there are conflicting results
+     - Keep responses brief (under 15 words)
+     - Never say "according to my memory" — just answer directly
+     - For "where" questions → location context
+     - For "what" questions → describe the item
+     - For "when" questions → time/date context
+
+   Memory context format:
+     MOST RECENT (today): I parked my car on level 3
+     Older (5 days ago): I parked at the mall lot
+
+   Output: "You parked on level 3"
+
+   Fallback (if API fails):
+     - Single memory → return memory content directly
+     - Multiple memories → join top 3 with periods
+     - No memories → "I don't have any information about that"
+
+5. CALL 3: REMINDER PARSING
+
+   Converts natural language into structured reminder data.
+
+   Input: "Remind me to drink water every 2 hours"
+
+   System prompt provides:
+     - JSON output format specification
+     - Rules for recurring vs one-time
+     - Unit conversion rules (hours → minutes)
+     - 10+ examples covering edge cases
+
+   Output JSON:
+   {
+     "type": "recurring",
+     "message": "Drink water",
+     "timeType": null,
+     "timeValue": null,
+     "intervalMinutes": 120
+   }
+
+   Post-processing after LLM returns:
+     1. Extract JSON from response (find first { to last })
+     2. Validate required fields (message, type)
+     3. Correct intervalMinutes if LLM misunderstood units
+     4. Calculate scheduledTime for one-time reminders
+     5. Set isDurationBased flag (duration vs static time)
+     6. Apply defaults (5 min for one-time, 30 min for recurring)
+
+   Time calculation:
+     Duration ("in 5 minutes"):
+       scheduledTime = now + 5 minutes
+       isDurationBased = true
+
+     Static ("at 4pm"):
+       scheduledTime = today at 4pm (or tomorrow if already passed)
+       isDurationBased = false
+
+6. INTERVAL CORRECTION
+
+   The LLM sometimes confuses minutes and hours. A safety check runs
+   after parsing:
+
+   User says: "every 2 minutes"
+   LLM returns: intervalMinutes: 120 (confused 2 minutes with 2 hours)
+
+   Correction:
+     1. Regex extracts number and unit from original input
+     2. "every 2 minutes" → number=2, unit=minutes → expected=2
+     3. LLM said 120, expected 2 → corrected to 2
+
+   This only kicks in when the LLM's output doesn't match what the user
+   actually said. If the LLM is correct, no correction is applied.
+
+7. RESPONSE CLEANING
+
+   LLM responses are cleaned before being spoken:
+     - Trim whitespace
+     - Remove common prefixes: "Answer:", "Response:", "Based on", "According to"
+     - Capitalize first letter
+
+   This ensures the TTS output sounds natural and conversational.
+
+8. INITIALIZATION
+
+   On startup:
+     1. Create HTTP client
+     2. Initialize on-device IntentClassifierService (ONNX model)
+     3. Test Groq API connectivity with a minimal "Hi" request
+     4. If API test fails → still mark as ready (intent classifier works)
+
+   The service is resilient — even without internet, intent detection
+   works on-device. Only response generation and reminder parsing need
+   the cloud.
+
+9. EDGE CASES
+
+   - No API key → fallback responses, no LLM parsing
+   - API timeout (>30s) → error caught, fallback response
+   - Invalid JSON from LLM → parsing fails, returns null
+   - Reminder without time → defaults to 5 minutes from now
+   - Recurring without interval → defaults to 30 minutes
+   - API returns non-200 → error logged, fallback used
+   - Multiple LLM errors → app still works (intent is on-device)
+
+10. EXAMPLE SCENARIOS
+
+    Scenario A: "Memory search response"
+      User: "What's my WiFi password?"
+      → Semantic search finds: "My WiFi password is hello123"
+      → LLM prompt: Question + memory context
+      → LLM: "Your WiFi password is hello123"
+      → TTS speaks response
+
+    Scenario B: "Reminder parsing"
+      User: "Remind me to take a break every 2 hours"
+      → LLM parses: {type: recurring, message: "Take a break", intervalMinutes: 120}
+      → Validation: user said "2 hours", LLM said 120 min → correct
+      → Reminder created with 120-minute interval
+
+    Scenario C: "API down"
+      User: "Where are my keys?"
+      → Semantic search finds: "Keys are on the kitchen counter"
+      → LLM call fails (timeout)
+      → Fallback: returns memory content directly
+      → TTS: "Keys are on the kitchen counter"
+
+    Scenario D: "Time already passed"
+      User: "Remind me to eat lunch at 12pm" (it's currently 2pm)
+      → LLM: timeType=static, timeValue="12 PM"
+      → Parsing: 12pm today already passed → schedule for 12pm tomorrow
+      → Reminder set for tomorrow noon
+
+FILES
+-----
+  lib/services/llm_service.dart               → LLMService (Groq API calls)
+  lib/services/intent_classifier_service.dart  → On-device intent detection
+  .env                                         → GROQ_API_KEY

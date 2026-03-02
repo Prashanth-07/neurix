@@ -1,0 +1,237 @@
+AUTHENTICATION & DATA SYNC
+============================
+
+1. WHAT IT DOES
+   Neurix uses Firebase Authentication for user login (email/password and
+   Google sign-in). All data is stored locally first in SQLite, then synced
+   to Firebase Firestore in the background when internet is available.
+   This "local-first" approach means the app works fully offline.
+
+2. BIG PICTURE
+
+   REGISTRATION:
+   User signs up → Firebase Auth creates account
+       → User data saved to SQLite (instant)
+       → User data saved to Firestore (if online)
+       → If offline → queued for sync when connection returns
+
+   LOGIN:
+   User signs in → Firebase Auth verifies
+       → Load user from SQLite first (fast)
+       → Background sync with Firestore (if online)
+       → Newer data wins (timestamp comparison)
+
+   DATA FLOW:
+   App ←→ SQLite (local) ←→ Firestore (cloud)
+           always fast        only when online
+
+3. AUTHENTICATION SERVICE
+
+   Two sign-in methods:
+
+   Email/Password:
+     - registerWithEmail(name, email, password)
+     - signInWithEmail(email, password)
+     - Uses Firebase Auth createUserWithEmailAndPassword / signInWithEmailAndPassword
+
+   Google Sign-In:
+     - signInWithGoogle()
+     - Uses google_sign_in package
+     - Detects web vs mobile platform for correct OAuth flow
+     - Extracts name, email, photo URL from Google account
+
+   Auth states:
+     unauthenticated → loading → authenticated
+                         ↓
+                       error
+
+   State management:
+     - authStatusStream: broadcasts auth state changes
+     - user stream: broadcasts user data changes
+     - currentUser getter: current logged-in UserModel
+     - Listens to Firebase onAuthStateChanged for auto-login on app restart
+
+4. AUTH FLOW DETAIL
+
+   Registration:
+     1. Firebase Auth: createUserWithEmailAndPassword()
+     2. Create UserModel with uid, name, email, preferences
+     3. SyncService.registerUser() → save local + cloud
+     4. Set auth status to authenticated
+     5. Notify all listeners
+
+   Login:
+     1. Firebase Auth: signInWithEmailAndPassword()
+     2. Get uid from Firebase user
+     3. SyncService.loginUser(uid) → load from local first
+     4. If not found locally → try cloud
+     5. Set auth status to authenticated
+     6. Start background sync
+
+   Auto-login (app restart):
+     1. Firebase Auth stream fires with existing user
+     2. Load user data from SyncService
+     3. If found → authenticated
+     4. If not found → unauthenticated (rare edge case)
+
+   Logout:
+     1. Firebase Auth: signOut()
+     2. Google Sign-In: signOut() (if Google was used)
+     3. Clear current user data
+     4. Set auth status to unauthenticated
+
+5. USER MODEL
+
+   UserModel contains:
+     - uid: Firebase Auth UID
+     - name: display name
+     - email: email address
+     - photoUrl: profile photo URL (from Google or uploaded)
+     - preferences: Map<String, dynamic> for settings
+     - createdAt: registration timestamp
+     - lastLoginAt: last login timestamp
+
+6. SYNC SERVICE
+
+   The SyncService handles the local-first data strategy:
+
+   Sync statuses:
+     synced  → data matches between local and cloud
+     syncing → currently transferring data
+     pending → changes waiting to sync (offline)
+     error   → sync failed
+
+   Registration sync:
+     1. Save to SQLite first (always succeeds)
+     2. Check if online
+     3. If online → save to Firestore → status: synced
+     4. If offline → status: pending → sync later
+
+   Login sync:
+     1. Load from SQLite (fast, offline-capable)
+     2. If found → return immediately + start background sync
+     3. If not found locally → try Firestore (if online)
+     4. If found in cloud → cache locally for next time
+     5. If not found anywhere → login fails
+
+7. BACKGROUND SYNC
+
+   When a user logs in, _backgroundSyncUser() runs asynchronously:
+     1. Load user from both SQLite and Firestore
+     2. If no cloud user → upload local user
+     3. If both exist → compare lastLoginAt timestamps
+     4. Newer version overwrites the older one
+     5. Update lastLoginAt in cloud
+
+   This runs via Future.microtask() so it doesn't block the UI.
+
+8. CONNECTIVITY MONITORING
+
+   Package: connectivity_plus
+
+   - Monitors WiFi/cellular/none transitions
+   - On connection restored:
+     1. Reset retry counters
+     2. Run _syncPendingData()
+     3. Upload all local users to Firestore
+
+   - On connection lost:
+     - All cloud operations silently skipped
+     - App continues working with local data
+
+9. RETRY LOGIC
+
+   Cloud operations use _tryCloudOperation() with retry:
+     - Max retries: 3
+     - Retry delay: 5 seconds between attempts
+     - If max retries exceeded → wait for retry delay to elapse
+     - On success → reset retry counter
+     - On connectivity change → reset retry counter
+
+10. LOCAL DATABASE (SQLite)
+
+    Table: users
+      - uid TEXT PRIMARY KEY
+      - name TEXT
+      - email TEXT
+      - photoUrl TEXT
+      - preferences TEXT (JSON)
+      - createdAt TEXT (ISO timestamp)
+      - lastLoginAt TEXT (ISO timestamp)
+
+    Operations: saveUser, getUserByUid, getAllUsers, updateLastLogin, clearAllData
+
+11. CLOUD DATABASE (Firestore)
+
+    Collection: users
+      - Document ID: user's uid
+      - Fields match UserModel
+      - Uses set() with merge option (upsert)
+      - getUserByUid: direct document lookup
+      - getUserByEmail: collection query with where()
+      - getUserStream: real-time snapshots listener
+
+    Online check: connectivity_plus + isOnline() method
+
+12. FIREBASE ERROR HANDLING
+
+    Common Firebase errors mapped to user-friendly messages:
+      - email-already-in-use → "Email is already registered"
+      - invalid-email → "Invalid email address"
+      - weak-password → "Password is too weak"
+      - user-not-found → "No account found"
+      - wrong-password → "Incorrect password"
+      - network-request-failed → "Network error"
+
+    Pigeon plugin errors (Flutter-Firebase communication) are caught
+    and handled gracefully.
+
+13. EDGE CASES
+
+    - No internet at signup → local account created, syncs later
+    - Different data local vs cloud → newer timestamp wins
+    - Google sign-in cancelled → returns to login screen
+    - Firebase auth token expired → auto-refreshed by Firebase SDK
+    - App killed during sync → next launch recovers via _syncPendingData
+    - Multiple devices → last login wins on sync
+    - clearLocalData() → wipes SQLite for debugging/logout
+
+14. EXAMPLE SCENARIOS
+
+    Scenario A: "First-time registration (online)"
+      User enters name, email, password → taps Register
+      → Firebase creates auth account → uid generated
+      → UserModel saved to SQLite (instant)
+      → UserModel saved to Firestore (background)
+      → Status: synced → app shows home screen
+
+    Scenario B: "Login while offline"
+      User opens app with no internet
+      → Firebase Auth has cached credentials → user authenticated
+      → SyncService loads from SQLite → user data available
+      → App works fully with local data
+      → When internet returns → background sync runs
+
+    Scenario C: "Data conflict resolution"
+      Device A updates user at 2:00 PM (local + cloud)
+      Device B was offline, updates user at 1:00 PM (local only)
+      Device B comes online → background sync
+      → Cloud has 2:00 PM, local has 1:00 PM
+      → Cloud is newer → overwrites local
+      → Both devices now have 2:00 PM version
+
+    Scenario D: "Google sign-in"
+      User taps "Sign in with Google"
+      → Google OAuth popup → user selects account
+      → Firebase Auth receives Google credential
+      → UserModel created with Google name/email/photo
+      → Saved to SQLite + Firestore
+      → User logged in with profile photo
+
+FILES
+-----
+  lib/services/auth_service.dart     → AuthService (Firebase Auth + Google)
+  lib/services/sync_service.dart     → SyncService (local-first sync)
+  lib/services/local_db_service.dart  → LocalDbService (SQLite)
+  lib/services/cloud_db_service.dart  → CloudDbService (Firestore)
+  lib/models/user_model.dart          → UserModel data class

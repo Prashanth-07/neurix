@@ -1,0 +1,193 @@
+MEMORY SYSTEM & SEMANTIC SEARCH
+=================================
+
+1. WHAT IT DOES
+   Neurix stores things the user says as "memories" — short text snippets
+   like "I parked on level 3" or "My WiFi password is hello123". When the
+   user asks a question, Neurix searches through all memories using semantic
+   similarity (meaning-based, not just keyword matching) and returns the
+   most relevant result.
+
+2. BIG PICTURE
+
+   SAVING:
+   Voice → "I put my keys on the kitchen table"
+       → Intent: save
+       → Strip prefix ("remember that", "save", etc.)
+       → Generate 768-dim embedding via Nomic API
+       → Store text + embedding in SQLite
+
+   SEARCHING:
+   Voice → "Where are my keys?"
+       → Intent: search
+       → Generate query embedding (768-dim)
+       → Cosine similarity against all stored embeddings
+       → Top results + recency bonus → ranked list
+       → LLM generates natural response from results
+       → TTS speaks answer
+
+3. MEMORY MODEL
+
+   Each memory has:
+     - id: unique UUID
+     - userId: who owns it
+     - content: the actual text ("I parked on level 3")
+     - embedding: 768-dim float vector (for semantic search)
+     - createdAt: timestamp
+     - updatedAt: timestamp
+
+4. SAVING A MEMORY
+
+   Step 1: Extract content
+     LLMService.extractMemoryContent() strips command prefixes:
+       "remember that I parked on level 3" → "I parked on level 3"
+       "save my WiFi password is hello123" → "My WiFi password is hello123"
+
+     Prefixes removed: "remember that", "remember", "save that", "save",
+     "store that", "store", "note that", "note", "keep in mind that",
+     "don't forget that", etc.
+
+   Step 2: Generate embedding
+     Text → EmbeddingService.generateEmbedding(text, isQuery: false)
+     → Nomic Atlas API (nomic-embed-text-v1.5)
+     → Returns 768-dimensional float vector
+
+     task_type: "search_document" (for saving)
+     This tells the model to optimize the embedding for being found later.
+
+   Step 3: Store in database
+     Memory object (text + embedding + metadata) → LocalDbService.saveMemory()
+     → SQLite INSERT into memories table
+
+   Step 4: Subscription check
+     Before saving, SubscriptionService.canAddMemory() is checked.
+     Free tier: max 2 memories. Pro tier: unlimited.
+
+5. SEARCHING MEMORIES
+
+   Step 1: Generate query embedding
+     "Where are my keys?" → EmbeddingService.generateEmbedding(text, isQuery: true)
+     → Nomic Atlas API with task_type: "search_query"
+     → 768-dim query vector
+
+   Step 2: Load all memories with embeddings
+     All user memories fetched from SQLite with their stored embeddings.
+
+   Step 3: Cosine similarity scoring
+     For each memory:
+       similarity = dot(query, memory) / (|query| × |memory|)
+
+     Range: -1.0 to 1.0
+       1.0 = identical meaning
+       0.0 = unrelated
+      -1.0 = opposite meaning
+
+   Step 4: Recency bonus
+     Memories from the last 30 days get a bonus:
+       bonus = 0.1 × (1 - days_old / 30)
+
+     A memory from today gets +0.10 bonus.
+     A memory from 15 days ago gets +0.05 bonus.
+     A memory from 31+ days ago gets +0.00 bonus.
+
+     Final score = similarity + recency bonus
+
+   Step 5: Threshold and ranking
+     - Only memories with similarity >= 0.30 are considered
+     - Results sorted by final score (descending)
+     - Top 5 returned
+
+   Step 6: LLM response generation
+     Top results → LLMService.generateContextualResponse(query, memories)
+     → Groq API (llama-3.1-8b-instant) generates a natural answer
+     → Example: "You left your keys on the kitchen table"
+
+6. EMBEDDING SERVICE (Nomic Atlas API)
+
+   Primary: Nomic Atlas API
+     - Model: nomic-embed-text-v1.5
+     - Dimensions: 768
+     - API: https://api-atlas.nomic.ai/v1/embedding/text
+     - Auth: Bearer token from NOMIC_API_KEY in .env
+     - Timeout: 10 seconds
+     - Two task types:
+         search_document → for saving (optimized to be found)
+         search_query → for searching (optimized to find)
+
+   Fallback: Hash-based TF-IDF-like embedding
+     If the Nomic API fails 3 times in a row, the service switches to
+     a local fallback that generates 768-dim vectors using:
+       - Word hashing across 8 dimensions per word
+       - Bigram features (pairs of consecutive words)
+       - Character-level features for typo tolerance
+       - Stop word down-weighting (0.3x for "the", "a", "is", etc.)
+       - L2 normalization to unit length
+
+     The fallback works but is much less accurate than the real API.
+     It can be reset with resetApiUsage() to retry the API.
+
+7. LOCAL DATABASE (SQLite)
+
+   Table: memories
+     - id TEXT PRIMARY KEY
+     - userId TEXT
+     - content TEXT
+     - embedding TEXT (JSON-encoded float array)
+     - createdAt TEXT (ISO timestamp)
+     - updatedAt TEXT (ISO timestamp)
+
+   Two search methods:
+     - searchMemories(query): keyword search using SQL LIKE
+       Strips stop words, searches remaining keywords.
+     - semanticSearchMemories(queryEmbedding): embedding-based search
+       Loads all embeddings, calculates cosine similarity in Dart code.
+
+   The semantic search happens in-memory (not SQL) because SQLite
+   doesn't natively support vector similarity queries. For the typical
+   number of memories a user has (dozens to hundreds), this is fast enough.
+
+8. EDGE CASES
+
+   - No API key configured → uses fallback embedding immediately
+   - API fails → retries up to 3 times, then switches to fallback
+   - Memory without embedding → skipped during semantic search
+   - Empty search results → LLM says "I don't have that information"
+   - Duplicate content → saved as separate memory (no dedup)
+   - Very long text → truncated by speech recognition (30s max listen)
+   - Embedding dimension mismatch → returns 0.0 similarity with warning
+
+9. EXAMPLE SCENARIOS
+
+   Scenario A: "Save and retrieve"
+     Save: "My locker combination is 24-15-36"
+       → Embedding generated → stored in SQLite
+     Later: "What's my locker combination?"
+       → Query embedding → cosine similarity → finds the memory
+       → LLM: "Your locker combination is 24-15-36"
+
+   Scenario B: "Semantic understanding"
+     Save: "I left my umbrella at the coffee shop on Main Street"
+     Search: "Where's my umbrella?"
+       → Even though "umbrella" and "coffee shop" are different words,
+         semantic search understands the relationship
+       → Returns: "You left it at the coffee shop on Main Street"
+
+   Scenario C: "Recency matters"
+     Save (30 days ago): "Meeting with John at 2pm"
+     Save (today): "Meeting with John at 4pm"
+     Search: "When is my meeting with John?"
+       → Both have high similarity, but today's memory gets +0.10 bonus
+       → Returns the most recent: "Your meeting with John is at 4pm"
+
+   Scenario D: "API fallback"
+     Nomic API is down → 3 failures → switches to hash-based embedding
+     Saves and searches still work, just less accurately
+     When API comes back → call resetApiUsage() to re-enable
+
+FILES
+-----
+  lib/services/embedding_service.dart  → EmbeddingService (Nomic API + fallback)
+  lib/services/llm_service.dart        → generateContextualResponse(), extractMemoryContent()
+  lib/services/local_db_service.dart   → SQLite CRUD for memories
+  lib/models/memory_model.dart         → Memory data model
+  lib/screens/home_screen.dart         → _handleAddMemory(), _handleSearchMemory()

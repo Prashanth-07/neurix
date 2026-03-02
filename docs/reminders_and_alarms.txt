@@ -1,0 +1,228 @@
+REMINDERS & ALARMS SYSTEM
+===========================
+
+1. WHAT IT DOES
+   Neurix can set reminders from voice commands like "Remind me to drink
+   water every 30 minutes" or "Remind me to call mom at 4pm." Reminders
+   fire even when the app is in the background — the phone wakes up,
+   shows a full-screen alarm, speaks the reminder out loud, and shows
+   notification actions (snooze / dismiss / stop).
+
+2. BIG PICTURE
+
+   Voice: "Remind me to take medicine at 4pm"
+       → Intent: reminder
+       → LLM parses: type=oneTime, message="Take medicine", time=4:00 PM
+       → ReminderService schedules AndroidAlarmManager alarm
+       → Stores alarm data in SharedPreferences for background callback
+       → At 4:00 PM: alarm fires → TTS speaks → notification appears
+       → User dismisses → alarm cleaned up
+
+3. REMINDER TYPES
+
+   One-Time Reminder
+     - Fires once at a specific time
+     - Example: "Remind me to call mom at 4pm"
+     - After firing, marked as inactive
+
+   Recurring Reminder
+     - Fires repeatedly at a fixed interval
+     - Example: "Remind me to drink water every 30 minutes"
+     - After each fire, schedules the next occurrence
+     - Continues until user cancels
+
+4. REMINDER PARSING (LLM)
+
+   User input → LLMService.parseReminderFromVoice() → Groq API
+
+   The LLM returns JSON:
+   {
+     "type": "oneTime" or "recurring",
+     "message": "Take medicine",
+     "timeType": "duration" or "static" or null,
+     "timeValue": "5 minutes" or "4 PM" or null,
+     "intervalMinutes": 30 (for recurring)
+   }
+
+   Time types:
+     duration → "in 5 minutes", "after 2 hours"
+       Calculates: now + duration
+     static → "at 4pm", "at 7 in the morning"
+       Parses hour/minute, uses today or tomorrow if time already passed
+     null → recurring reminders (just interval, no start time)
+
+   Interval validation:
+     The LLM sometimes confuses minutes and hours. A post-processing step
+     extracts the number and unit from the original input and corrects
+     the LLM's output if they don't match.
+
+     Example: User says "every 2 minutes", LLM returns 120 (2 hours)
+     → Regex extracts "2 minutes" → corrects to 2
+
+   Defaults:
+     - One-time with no parseable time → 5 minutes from now
+     - Recurring with no interval → 30 minutes
+
+5. SCHEDULING (Android)
+
+   Primary: AndroidAlarmManager
+     - Uses oneShotAt() for precise alarm scheduling
+     - exact: true → fires at exact time (not batched by OS)
+     - wakeup: true → wakes device from sleep
+     - rescheduleOnReboot: true → survives phone restart
+     - allowWhileIdle: true → works in Doze mode
+
+   Before scheduling:
+     1. Generate alarm ID from reminder ID: hashCode.abs() % 100000
+     2. Store reminder data in SharedPreferences: alarm_{alarmId}
+        Contains: id, message, isRecurring, intervalMinutes, scheduledTimeMs
+     3. Schedule the alarm
+
+   Fallback: zonedSchedule
+     If AndroidAlarmManager fails, falls back to flutter_local_notifications'
+     zonedSchedule(). Works but doesn't support TTS in background.
+
+   Permissions required (Android 12+):
+     - SCHEDULE_EXACT_ALARM → for exact timing
+     - POST_NOTIFICATIONS → for showing notifications
+     - USE_FULL_SCREEN_INTENT → for lock-screen alarm display
+
+6. ALARM CALLBACK (Background Isolate)
+
+   When an alarm fires, alarmCallback() runs in a SEPARATE background
+   isolate (not the main app). This is critical to understand — it has
+   no access to the app's in-memory state.
+
+   Flow:
+     1. DartPluginRegistrant.ensureInitialized() — init Flutter in isolate
+     2. SharedPreferences.getInstance() + reload() — force fresh data
+     3. Lookup alarm_{alarmId} in SharedPreferences
+     4. If not found → stale alarm → cancel and return
+
+     5. Stale alarm check (one-time only):
+        If scheduled time was more than 10 minutes ago → ignore
+        This prevents old alarms from firing after app restart
+
+     6. Store active alarm data for the app to pick up:
+        active_alarm_id, active_alarm_message, active_alarm_timestamp
+
+     7. Send wake-up broadcast via AlarmHelperService
+        Forces device to wake up and bring app to foreground
+
+     8. Show notification with:
+        - fullScreenIntent: true → shows alarm-style on lock screen
+        - ongoing: true → can't be swiped away
+        - category: alarm → Android treats it as alarm
+        - Actions: Snooze 10min / Dismiss (one-time) or Stop (recurring)
+
+     9. Speak reminder via TTS:
+        Initialize FlutterTts in isolate → speak message → wait for completion
+
+    10. For recurring reminders:
+        - Reload SharedPreferences (user may have deleted it)
+        - If data still exists → schedule next occurrence
+        - Calculate next time: now + intervalMinutes
+        - Update stored scheduledTimeMs
+        - Call AndroidAlarmManager.oneShotAt() again
+
+7. NOTIFICATION ACTIONS
+
+   One-time reminders:
+     - Snooze 10min → reschedules alarm 10 minutes later
+     - Dismiss → cleans up alarm data
+
+   Recurring reminders:
+     - Snooze 10min → delays next occurrence
+     - Stop Reminder → cancels all future occurrences
+
+8. CANCELLING REMINDERS
+
+   By voice: "Cancel the water reminder"
+     → Intent: cancel_reminder
+     → IntentClassifier extracts topic: "water"
+     → App searches active reminders for matching message
+     → If found: mark inactive + clean up alarm data
+     → If "cancel all" → deletes all active reminders
+
+   Cleanup includes:
+     - Mark reminder as inactive in SQLite
+     - Remove alarm_{id} from SharedPreferences
+     - Cancel AndroidAlarmManager alarm
+     - Cancel notification
+     - Remove active_alarm_* data if matching
+
+9. APP STARTUP RECOVERY
+
+   On every app start, ReminderService runs:
+
+   _cleanupOrphanedAlarmData():
+     - Finds all alarm_* keys in SharedPreferences
+     - Compares against active reminders in SQLite
+     - Removes orphaned entries (no matching reminder)
+     - Removes expired one-time alarms (>10 min past)
+     - Cleans up stale active_alarm_* data (>5 min old)
+
+   _rescheduleAllActiveReminders():
+     - Loads all active reminders from SQLite
+     - One-time past due → mark inactive + clean up
+     - Recurring past due → calculate next future occurrence
+     - Future reminders → reschedule normally
+
+   This ensures alarms survive app restarts and phone reboots.
+
+10. TIMEZONE HANDLING
+
+    Reminders use the device's local timezone:
+      - timezone package initialized with tz_data
+      - Device timezone offset detected at startup
+      - Maps UTC offset to timezone name (e.g., UTC+5:30 → Asia/Kolkata)
+      - All scheduled times use local timezone for accuracy
+
+11. EDGE CASES
+
+    - Phone rebooted → rescheduleOnReboot recovers alarms
+    - App killed → background isolate still fires alarms
+    - Alarm fires while app is open → alarm screen shows on top
+    - Alarm fires >10 min late → suppressed as stale
+    - User deletes reminder while alarm is pending → cleanup catches it
+    - Recurring reminder deleted between fires → reload check prevents reschedule
+    - Two alarms fire simultaneously → unique notification IDs prevent collision
+    - SharedPreferences stale in isolate → explicit reload() before reading
+
+12. EXAMPLE SCENARIOS
+
+    Scenario A: "One-time reminder"
+      User: "Remind me to call mom in 5 minutes"
+      → LLM: type=oneTime, message="Call mom", duration=5 minutes
+      → Scheduled: now + 5 minutes
+      → 5 minutes later: phone wakes, alarm screen, TTS: "Reminder: Call mom"
+      → User taps Dismiss → alarm gone, reminder marked inactive
+
+    Scenario B: "Recurring reminder"
+      User: "Remind me to drink water every 30 minutes"
+      → LLM: type=recurring, message="Drink water", interval=30
+      → First alarm: now + 30 minutes
+      → Every 30 min: alarm fires → TTS speaks → schedules next one
+      → User: "Stop the water reminder" → all future alarms cancelled
+
+    Scenario C: "Static time"
+      User: "Remind me to take medicine at 4pm"
+      → LLM: type=oneTime, timeType=static, timeValue="4 PM"
+      → If it's 2pm now → scheduled for 4pm today
+      → If it's 5pm now → scheduled for 4pm tomorrow
+
+    Scenario D: "App restart recovery"
+      User sets reminder for 3pm → app killed at 2pm
+      → AlarmManager still fires at 3pm (background isolate)
+      → Later: user opens app → _rescheduleAllActiveReminders()
+      → Past one-time reminders cleaned up
+      → Active recurring reminders rescheduled
+
+FILES
+-----
+  lib/services/reminder_service.dart    → ReminderService, alarmCallback()
+  lib/services/alarm_helper_service.dart → AlarmHelperService (wake broadcast)
+  lib/services/llm_service.dart          → parseReminderFromVoice()
+  lib/services/local_db_service.dart     → Reminder CRUD operations
+  lib/models/reminder_model.dart         → Reminder data model
+  lib/screens/home_screen.dart           → _handleCreateReminder(), _handleCancelReminder()

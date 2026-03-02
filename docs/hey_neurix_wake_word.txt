@@ -1,0 +1,593 @@
+================================================================================
+  "HEY NEURIX" WAKE WORD DETECTION - Complete Technical Documentation
+================================================================================
+
+Last updated: February 2026
+Status: Working (on-device, free, no API keys)
+
+
+TABLE OF CONTENTS
+-----------------
+1. What It Does
+2. The Big Picture
+3. The 3-Stage ONNX Pipeline
+4. Voice Enrollment (Setup)
+5. Live Detection (Listening)
+6. Sequence Similarity Verification
+7. Personalized Threshold
+8. Edge Cases & How They're Handled
+9. Training the Model
+10. File Reference
+11. Example Scenarios
+
+
+================================================================================
+1. WHAT IT DOES
+================================================================================
+
+When the user says "Hey Neurix", the app wakes up and starts listening for
+a voice command — just like "Hey Siri" or "Ok Google".
+
+Key properties:
+- Runs 100% on-device (no internet needed for detection)
+- Free forever (no API keys, no per-device licenses)
+- Personalized to the user's voice via enrollment
+- Blocks false triggers from other people, random speech, music, and noise
+
+
+================================================================================
+2. THE BIG PICTURE
+================================================================================
+
+There are TWO phases:
+
+  ENROLLMENT (one-time setup):
+    User says "Hey Neurix" 5 times
+    -> Each recording is validated (must score > 0.40 on classifier)
+    -> Bad recordings are rejected ("Didn't catch that. Try again...")
+    -> Good recordings save: embedding sequence + averaged embedding + raw audio
+    -> Personalized threshold is calculated from classifier scores
+
+  DETECTION (always running in background):
+    Microphone streams audio continuously
+    -> 3-stage ONNX pipeline extracts features and classifies
+    -> If classifier score > threshold -> check sequence similarity
+    -> If sequence matches enrolled "Hey Neurix" -> WAKE WORD DETECTED!
+    -> If sequence doesn't match -> SUPPRESSED (false trigger blocked)
+
+
+================================================================================
+3. THE 3-STAGE ONNX PIPELINE
+================================================================================
+
+Three neural network models run in sequence, each doing one job:
+
+  Raw Audio (16kHz PCM)
+       |
+       v
+  +----------------------------+
+  | Stage 1: melspectrogram.onnx |  (1.04 MB)
+  |                            |
+  | Converts raw audio into    |
+  | mel spectrogram features   |
+  | (frequency representation)|
+  |                            |
+  | Input:  [1, 1280] float32  |  <- 80ms of audio (1280 samples at 16kHz)
+  | Output: [time, 1, dim, 32] |  <- ~5 mel frames per audio frame
+  +----------------------------+
+       |
+       | Normalize: (value / 10.0) + 2.0
+       | Accumulate 76 mel frames (~760ms worth)
+       v
+  +----------------------------+
+  | Stage 2: embedding_model.onnx | (1.27 MB)
+  |                            |
+  | Extracts 96-dimensional    |
+  | speech embedding vector    |
+  | (captures WHAT was said +  |
+  |  WHO said it)              |
+  |                            |
+  | Input:  [1, 76, 32, 1]    |  <- 76 mel frames
+  | Output: [1, 1, 1, 96]     |  <- 96-dim embedding
+  +----------------------------+
+       |
+       | Slide by 8 mel frames, repeat
+       | Accumulate 16 embeddings (~1.3s of speech context)
+       v
+  +----------------------------+
+  | Stage 3: hey_neurix.onnx  |  (~395 KB)
+  |                            |
+  | Classifies: is this "Hey   |
+  | Neurix" or not?            |
+  |                            |
+  | Input:  [1, 16, 96]       |  <- 16 embeddings x 96 dimensions
+  | Output: [1, 1]            |  <- score 0.0 to 1.0
+  +----------------------------+
+       |
+       v
+  Score > threshold? -> Continue to verification
+  Score < threshold? -> Ignore (not wake word)
+
+
+How the sliding window works:
+- Audio arrives in 80ms chunks (1280 samples)
+- Each chunk produces ~5 mel frames
+- Every 8 mel frames, a new embedding is computed
+- The classifier always looks at the LAST 16 embeddings
+- This creates a rolling ~1.3-second context window
+
+
+================================================================================
+4. VOICE ENROLLMENT (Setup)
+================================================================================
+
+Screen: wake_word_setup_screen.dart
+Service: wake_word_service.dart -> extractEnrollmentData()
+
+FLOW:
+  1. User opens enrollment screen (auto-shown on first launch, or via
+     refresh icon on wake word card)
+
+  2. User taps mic button to begin
+
+  3. For each of 5 samples:
+     a. Record 3.5 seconds of 16kHz mono PCM audio
+     b. Process through mel -> embedding pipeline
+        - Get ~17-18 embeddings from 3.5s of audio
+     c. Find the BEST 16-embedding window:
+        - Slide through all possible 16-frame windows
+        - Run classifier on each window
+        - Pick the window with highest score
+        - This locates WHERE in the recording "Hey Neurix" actually is
+     d. QUALITY CHECK:
+        - If best classifier score < 0.40 -> REJECT the sample
+        - Show "Didn't catch that. Try again..."
+        - Auto-retry after 1.5 seconds
+        - This prevents garbage data (silence, noise, wrong words)
+     e. If score >= 0.40 -> ACCEPT
+        - Save the 16-frame embedding sequence (temporal pattern)
+        - Save the averaged embedding (speaker profile)
+        - Save the classifier score
+        - Save the raw PCM audio (for future model retraining)
+        - Show "Got it!" and advance to next sample
+
+  4. After all 5 samples accepted:
+     a. Save everything to SharedPreferences:
+        - Averaged embeddings (5 x 96 floats)
+        - Embedding sequences (5 x 16 x 96 floats)
+        - Classifier scores (5 floats)
+     b. Save raw audio files to app documents directory:
+        - /enrollment/sample_0.pcm through sample_4.pcm
+        - Stored as Int16 PCM (2 bytes per sample, ~96KB each)
+     c. Calculate personalized threshold:
+        - Take the minimum classifier score across all 5 samples
+        - Subtract 0.10 for margin
+        - Floor at 0.70 (never go below this)
+        - Formula: max(0.70, min(scores) - 0.10)
+     d. Show success, return to home screen
+
+
+DATA SAVED:
+  SharedPreferences:
+    'hey_neurix_enrollment'           -> 5 averaged embeddings (JSON)
+    'hey_neurix_enrollment_sequences' -> 5 embedding sequences (JSON)
+    'hey_neurix_enrollment_scores'    -> 5 classifier scores (JSON)
+    'hey_neurix_personal_threshold'   -> personalized threshold (double)
+
+  Files:
+    {app_documents}/enrollment/sample_0.pcm  (raw 16kHz Int16 PCM)
+    {app_documents}/enrollment/sample_1.pcm
+    {app_documents}/enrollment/sample_2.pcm
+    {app_documents}/enrollment/sample_3.pcm
+    {app_documents}/enrollment/sample_4.pcm
+
+
+================================================================================
+5. LIVE DETECTION (Listening)
+================================================================================
+
+Service: wake_word_service.dart -> _processFrame()
+
+FLOW:
+  1. AudioRecorder streams 16kHz mono PCM continuously
+  2. Raw bytes converted to float32 [-1.0, 1.0]
+  3. Buffered into 1280-sample frames (80ms each)
+  4. Each frame processed through the 3-stage pipeline:
+
+     Frame -> Mel Spectrogram -> buffer mel frames
+              When 76 mel frames ready -> Extract Embedding -> buffer embeddings
+              When 16 embeddings ready -> Classify
+
+  5. WARMUP (first 4 predictions skipped):
+     - When listening starts, buffers are empty
+     - First few predictions use partially stale data
+     - Warmup count = 4 predictions
+     - These scores are logged but ignored
+
+  6. DETECTION GATE (classifier score check):
+     - Use personalized threshold if enrolled, else default (0.80)
+     - Score > threshold? -> proceed to verification
+     - Score < threshold? -> ignore, continue listening
+
+  7. COOLDOWN (prevent rapid re-triggers):
+     - Minimum 1000ms between detections
+     - If last detection was < 1 second ago -> suppress
+     - This prevents the same "Hey Neurix" from firing multiple times
+
+  8. SEQUENCE SIMILARITY VERIFICATION:
+     (See section 6 for full details)
+     - Compare current 16-embedding buffer against 5 enrolled sequences
+     - Best match must score > 0.88
+     - If below -> SUPPRESS (not the right phrase)
+
+  9. If all checks pass -> WAKE WORD DETECTED!
+     - Fire callback -> home screen shows voice interaction
+     - Pause wake word listening (mic freed for speech recognition)
+     - After voice interaction ends -> resume listening
+
+
+DETECTION PIPELINE SUMMARY:
+
+  Audio chunk arrives
+       |
+  [Buffer 1280 samples?] --NO--> wait for more
+       |YES
+  [Mel spectrogram]
+       |
+  [76 mel frames?] --NO--> wait for more
+       |YES
+  [Extract embedding]
+       |
+  [16 embeddings?] --NO--> wait for more
+       |YES
+  [Classify: score = ?]
+       |
+  [Warmup done?] --NO--> skip (log only)
+       |YES
+  [Score > threshold?] --NO--> ignore
+       |YES
+  [Cooldown passed?] --NO--> suppress
+       |YES
+  [Enrolled?] --NO--> detect (no verification)
+       |YES
+  [Sequence similarity > 0.88?] --NO--> SUPPRESS
+       |YES
+  *** WAKE WORD DETECTED! ***
+
+
+================================================================================
+6. SEQUENCE SIMILARITY VERIFICATION
+================================================================================
+
+This is the key innovation that blocks false triggers from random speech
+by the same speaker.
+
+PROBLEM IT SOLVES:
+  The classifier model is small and sometimes scores high on non-wake-word
+  speech. Old approach (averaged cosine similarity) only verified WHO was
+  speaking, not WHAT they said — same speaker always got ~0.93+ regardless
+  of words. So "hello mom" by the enrolled user would pass.
+
+HOW IT WORKS:
+  Instead of averaging all 16 embeddings into one vector and comparing,
+  we compare frame-by-frame. Each frame captures a different moment in
+  the speech. "Hey" has different features than "Neu" which has different
+  features than "rix". This temporal pattern is unique to the phrase.
+
+  Algorithm:
+    For each of 5 enrolled sequences:
+      For each alignment shift from -3 to +3:
+        For each frame i in current buffer:
+          Compute cosine similarity between current[i] and enrolled[i+shift]
+        Average all frame similarities -> score for this shift
+      Take the best score across all shifts -> similarity for this enrollment
+    Take the best similarity across all 5 enrollments -> final score
+
+  The alignment shifts handle timing variation — the user might say
+  "Hey Neurix" slightly faster or slower than during enrollment.
+
+  Threshold: 0.88
+    - True "Hey Neurix" by enrolled user: typically 0.90 - 0.95+
+    - Random speech by enrolled user: typically 0.76 - 0.86
+    - The gap between these ranges is the discrimination power
+
+WHY THIS WORKS:
+  Embedding vectors capture BOTH speech content AND speaker identity.
+  When you average them, the temporal pattern (content) gets smoothed out
+  and only speaker identity remains. By comparing frame-by-frame, we
+  preserve the temporal pattern and can distinguish "Hey Neurix" from
+  "Hey Google" or "hello mom" even when spoken by the same person.
+
+
+================================================================================
+7. PERSONALIZED THRESHOLD
+================================================================================
+
+PROBLEM IT SOLVES:
+  Different users have different voice characteristics. The classifier
+  might consistently score 0.95 for one user but only 0.82 for another.
+  A fixed threshold of 0.80 might be too tight for the second user.
+
+HOW IT WORKS:
+  During enrollment, each sample gets a classifier score. These scores
+  represent how well the classifier recognizes THIS user saying "Hey Neurix".
+
+  Formula: threshold = max(0.70, min(enrollment_scores) - 0.10)
+
+  Example:
+    Enrollment scores: [0.92, 0.88, 0.95, 0.90, 0.91]
+    min = 0.88
+    threshold = max(0.70, 0.88 - 0.10) = max(0.70, 0.78) = 0.78
+
+  Another example:
+    Enrollment scores: [0.75, 0.72, 0.78, 0.74, 0.76]
+    min = 0.72
+    threshold = max(0.70, 0.72 - 0.10) = max(0.70, 0.62) = 0.70
+
+  The floor of 0.70 ensures we never set the threshold too low.
+  If not enrolled, the default threshold of 0.80 is used.
+
+
+================================================================================
+8. EDGE CASES & HOW THEY'RE HANDLED
+================================================================================
+
+EDGE CASE 1: User speaks too quietly or too early during enrollment
+  Problem: Recording captures silence or partial speech
+  Solution: Classifier scores the sample < 0.40 -> rejected with
+    "Didn't catch that. Try again..." -> auto-retry after 1.5s
+  Example: User says "Hey Neurix" but mic was still initializing ->
+    score = 0.014 -> rejected -> user gets another chance
+
+EDGE CASE 2: Someone else says "Hey Neurix"
+  Problem: Classifier recognizes the wake word but it's not the enrolled user
+  Solution: Sequence similarity check. Different speakers produce different
+    embedding patterns even for the same phrase. Similarity typically drops
+    below 0.88 for a different speaker.
+  Example: Roommate says "Hey Neurix" -> classifier score 0.85 (passes) ->
+    sequence similarity 0.72 (fails 0.88 threshold) -> SUPPRESSED
+
+EDGE CASE 3: Enrolled user says something else (random conversation)
+  Problem: Weak classifier might give high score for non-wake-word speech
+  Solution: Sequence similarity compares temporal pattern, not just speaker.
+    "Hello mom" has different frame-by-frame features than "Hey Neurix".
+  Example: User says "hey can you pass the salt" -> classifier score 0.82
+    (passes threshold) -> sequence similarity 0.79 (fails 0.88) -> SUPPRESSED
+
+EDGE CASE 4: Music or TV audio triggers detection
+  Problem: Certain frequencies in music/speech can cause high classifier scores
+  Solution: Three layers of defense:
+    1. Raised classifier threshold (0.80) blocks most music triggers
+    2. Sequence similarity checks temporal pattern (music patterns don't
+       match "Hey Neurix" speech patterns)
+    3. Speaker identity in embeddings differs from enrolled user
+  Example: Song playing -> classifier score 0.75 -> below threshold -> ignored
+
+EDGE CASE 5: Multiple rapid "Hey Neurix" calls
+  Problem: Same utterance detected multiple times as audio slides through buffer
+  Solution: 1000ms cooldown between detections. After one detection fires,
+    all subsequent detections within 1 second are suppressed.
+  Example: User says "Hey Neurix" -> detected at t=0 -> scores 0.95, 0.93,
+    0.91 at t=100ms, t=200ms, t=300ms -> all suppressed by cooldown
+
+EDGE CASE 6: Wake word detected during voice interaction
+  Problem: After detection, TTS speaks "Hey, what can I do?" which the mic
+    picks up, potentially re-triggering detection.
+  Solution: Wake word service is PAUSED during voice interaction
+    (TTS + speech recognition). Resumed only after interaction ends.
+
+EDGE CASE 7: App startup with stale buffers
+  Problem: First few predictions after starting/resuming use partially
+    filled or stale buffers, producing unreliable scores.
+  Solution: Warmup period of 4 predictions. These are logged but skipped
+    for detection purposes.
+
+EDGE CASE 8: Not enrolled yet (first launch)
+  Problem: No enrollment data exists for verification
+  Solution:
+    - On first launch, enrollment screen is automatically shown
+    - If somehow detection runs without enrollment, sequence similarity
+      check is skipped (backward compatible)
+    - Falls back to averaged cosine similarity if only old enrollment
+      data exists (no sequences)
+
+EDGE CASE 9: Microphone permission denied
+  Problem: Can't record audio
+  Solution: Shows error message in UI, wake word card shows error state
+
+EDGE CASE 10: User wants to re-enroll
+  Problem: Voice changed, or enrollment quality was poor
+  Solution: Refresh icon on wake word card -> clears ALL enrollment data
+    (SharedPreferences + raw audio files) -> opens enrollment screen fresh
+
+
+================================================================================
+9. TRAINING THE MODEL
+================================================================================
+
+Script: tools/train_wake_word.py
+
+The hey_neurix.onnx classifier is trained on a PC and bundled with the app.
+It does NOT train on-device.
+
+TRAINING DATA:
+  Positive samples:
+    - 28 Edge-TTS voices x 6 phrase variations = ~168 base clips
+    - Each augmented 8x (speed, pitch, volume, noise, padding) = ~1500+
+    - Optionally includes real enrollment recordings (augmented 24x each)
+
+  Negative samples (what should NOT trigger):
+    - 36 hard negatives (phonetically similar: "hey matrix", "hey neural", etc.)
+      x 12 voices x 3 augmentations = ~1300+
+    - 50+ conversation phrases x 8 voices x 2 = ~800+
+    - 25 short utterances x 6 voices = ~150
+    - 400 noise clips (white, pink, hum, silence)
+    - Total negatives: ~2600+
+
+ARCHITECTURE:
+  Flatten(16 x 96) -> Linear(1536, 128) -> LayerNorm -> ReLU -> Dropout(0.2)
+                    -> Linear(128, 64)   -> LayerNorm -> ReLU -> Dropout(0.1)
+                    -> Linear(64, 32)    -> LayerNorm -> ReLU
+                    -> Linear(32, 1)     -> Sigmoid
+
+TRAINING:
+  - 25 epochs, batch size 64
+  - Adam optimizer with weight decay 1e-4
+  - Cosine annealing learning rate schedule
+  - Weighted BCE loss (balances positive/negative ratio)
+  - 90/10 train/validation split
+  - Best model saved based on validation accuracy
+
+TO RETRAIN:
+  python tools/train_wake_word.py
+
+TO RETRAIN WITH USER'S REAL RECORDINGS:
+  python tools/train_wake_word.py --enrollment-dir /path/to/enrollment/
+
+OUTPUT:
+  assets/models/hey_neurix.onnx (~400 KB)
+  Then rebuild the Flutter app: flutter run
+
+
+================================================================================
+10. FILE REFERENCE
+================================================================================
+
+DART FILES:
+  lib/services/wake_word_service.dart
+    - Core service: ONNX pipeline, enrollment, detection, verification
+    - Singleton pattern (WakeWordService._internal)
+    - Key methods:
+        initialize()              - load models + enrollment data
+        extractEnrollmentData()   - process recording for enrollment
+        saveEnrollmentFull()      - persist all enrollment data
+        clearEnrollment()         - wipe enrollment data
+        _processFrame()           - main detection pipeline
+        _sequenceSimilarity()     - frame-by-frame comparison
+        _cosineSimilarity()       - vector similarity (fallback)
+
+  lib/screens/wake_word_setup_screen.dart
+    - Enrollment UI: mic button, progress ring, step counter
+    - Records 5 samples of 3.5 seconds each
+    - Validates each sample (score >= 0.40)
+    - Rejects bad samples with auto-retry
+
+  lib/screens/home_screen.dart
+    - Shows enrollment screen on first launch
+    - Wake word card with enable/disable switch
+    - Re-enroll button (refresh icon)
+    - Handles wake word detection callback
+
+ONNX MODELS:
+  assets/models/melspectrogram.onnx    (1.04 MB) - audio -> mel features
+  assets/models/embedding_model.onnx   (1.27 MB) - mel -> 96-dim embedding
+  assets/models/hey_neurix.onnx        (~400 KB) - embeddings -> wake word score
+
+TRAINING:
+  tools/train_wake_word.py             - training script (run on PC)
+
+ENROLLMENT DATA (on device):
+  SharedPreferences:
+    hey_neurix_enrollment              - averaged embeddings
+    hey_neurix_enrollment_sequences    - 16-frame sequences
+    hey_neurix_enrollment_scores       - classifier scores
+    hey_neurix_personal_threshold      - personalized threshold
+    hey_neurix_enabled                 - on/off toggle
+
+  Files:
+    {documents}/enrollment/sample_*.pcm - raw audio for retraining
+
+
+================================================================================
+11. EXAMPLE SCENARIOS
+================================================================================
+
+--- SCENARIO A: First-time user setup ---
+
+  1. User installs app, opens it
+  2. Wake word models load automatically
+  3. App detects: not enrolled -> shows enrollment screen
+  4. Screen says: "Say 'Hey Neurix' 5 times so Neurix can learn your voice"
+  5. User taps mic button
+  6. Recording 1: User says "Hey Neurix"
+     -> 3.5s recorded -> 18 embeddings extracted
+     -> Best classifier window: score = 0.94 -> ACCEPTED
+     -> "Got it!" (1 of 5)
+  7. Recording 2: User starts speaking too late, only partial word captured
+     -> score = 0.12 -> REJECTED
+     -> "Didn't catch that. Try again..."
+     -> Auto-retries after 1.5s
+  8. Recording 2 (retry): User says "Hey Neurix" clearly
+     -> score = 0.91 -> ACCEPTED (2 of 5)
+  9. ... continues until 5 good samples collected ...
+  10. "Saving your voice profile..."
+      -> Computes personalized threshold: max(0.70, 0.88 - 0.10) = 0.78
+      -> Saves all data
+  11. "Hey Neurix is ready!" -> returns to home screen
+  12. Wake word listening begins
+
+
+--- SCENARIO B: User says "Hey Neurix" while app is idle ---
+
+  1. App is open, wake word service listening in background
+  2. User says "Hey Neurix"
+  3. Audio processed: mel -> embeddings -> classifier
+  4. Classifier score: 0.93 (> personalized threshold 0.78) -> PASS
+  5. Cooldown: no recent detection -> PASS
+  6. Sequence similarity: compared against 5 enrolled sequences
+     -> Best match: 0.94 (> 0.88 threshold) -> PASS
+  7. *** WAKE WORD DETECTED! ***
+  8. TTS says: "Hey, what can I do for you?"
+  9. Speech recognition starts, user gives command
+  10. After command processed, wake word listening resumes
+
+
+--- SCENARIO C: User talks to someone, false trigger attempt ---
+
+  1. User is talking to their mom: "Hey, can you pass the rice?"
+  2. Classifier scores this: 0.82 (> threshold 0.78) -> PASS
+     (the word "hey" plus "rice" sounds somewhat like "neurix")
+  3. Cooldown: no recent detection -> PASS
+  4. Sequence similarity: current audio pattern compared to enrolled
+     -> Best match: 0.81 (< 0.88 threshold) -> FAIL
+     -> The temporal pattern of "hey can you pass the rice" doesn't
+        match the pattern of "Hey Neurix"
+  5. Detection SUPPRESSED
+  6. Log: "[WakeWord] Detection SUPPRESSED (sequence mismatch: 0.8100)"
+  7. User never interrupted. App stays quiet.
+
+
+--- SCENARIO D: Music playing ---
+
+  1. Song playing on speaker, some vocal passage
+  2. Classifier score: 0.74 (< threshold 0.78)
+  3. Immediately ignored. No further checks needed.
+  4. Even if score were higher (0.82), sequence similarity would
+     catch it — music patterns are very different from speech patterns.
+
+
+--- SCENARIO E: Different person says "Hey Neurix" ---
+
+  1. User's friend says "Hey Neurix" to test
+  2. Classifier score: 0.87 (> threshold) -> PASS
+  3. Sequence similarity: friend's voice produces different embedding
+     patterns even for same phrase
+     -> Best match: 0.76 (< 0.88 threshold) -> FAIL
+  4. Detection SUPPRESSED
+  5. Only the enrolled user can trigger the wake word
+
+
+--- SCENARIO F: Re-enrollment ---
+
+  1. User wants to re-enroll (maybe voice sounds different after illness)
+  2. Taps refresh icon on wake word card in home screen
+  3. Old enrollment data cleared (SharedPreferences + raw audio files)
+  4. Enrollment screen opens
+  5. User records 5 new samples
+  6. New sequences, embeddings, scores, threshold computed
+  7. Wake word listening resumes with new voice profile
+
+
+================================================================================
+  END OF DOCUMENTATION
+================================================================================

@@ -1,21 +1,46 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:onnxruntime/onnxruntime.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Result from processing one enrollment audio sample.
+class EnrollmentSampleResult {
+  /// Averaged 96-dim embedding across all frames (speaker profile).
+  final List<double> averagedEmbedding;
+
+  /// Best-scoring 16x96 embedding sequence (temporal phrase pattern).
+  final List<List<double>> embeddingSequence;
+
+  /// Classifier score for the best sequence window.
+  final double classifierScore;
+
+  EnrollmentSampleResult({
+    required this.averagedEmbedding,
+    required this.embeddingSequence,
+    required this.classifierScore,
+  });
+}
+
 /// On-device wake word detection using OpenWakeWord ONNX models.
 ///
-/// Pipeline: Raw Audio (16kHz PCM) → Mel Spectrogram → Speech Embedding → Wake Word Classifier
+/// Pipeline: Raw Audio (16kHz PCM) -> Mel Spectrogram -> Speech Embedding -> Wake Word Classifier
 ///
 /// Uses 3 ONNX models:
-///   1. melspectrogram.onnx   — converts raw audio to mel spectrogram features
-///   2. embedding_model.onnx  — extracts 96-dim speech embeddings from mel frames
-///   3. hey_jarvis_v0.1.onnx  — classifies embeddings as wake word or not
+///   1. melspectrogram.onnx   - converts raw audio to mel spectrogram features
+///   2. embedding_model.onnx  - extracts 96-dim speech embeddings from mel frames
+///   3. hey_neurix.onnx       - classifies embeddings as wake word or not
+///
+/// Verification layers (when enrolled):
+///   - Sequence similarity: compares temporal embedding pattern against enrollment
+///   - Personalized threshold: calibrated from user's enrollment classifier scores
 class WakeWordService extends ChangeNotifier {
   static final WakeWordService _instance = WakeWordService._internal();
   factory WakeWordService() => _instance;
@@ -53,15 +78,26 @@ class WakeWordService extends ChangeNotifier {
   static const int _melFramesNeeded = 76; // ~760ms for one embedding
   static const int _melSlide = 8; // slide 8 frames (80ms) per embedding
   static const int _embeddingsNeeded = 16; // ~1.3s context for classifier
-  static const double _threshold = 0.5;
-  static const int _warmupPredictions = 2;
-  static const int _detectionCooldownMs = 1000; // min ms between detections
+  static const double _threshold = 0.80; // raised from 0.5
+  static const int _warmupPredictions = 4; // raised from 2
+  static const int _detectionCooldownMs = 1000;
 
-  // ─── Enrollment ───
+  // ─── Enrollment Configuration ───
   static const String _enrollmentPrefKey = 'hey_neurix_enrollment';
-  static const double _similarityThreshold = 0.65;
+  static const String _enrollmentSequencesPrefKey =
+      'hey_neurix_enrollment_sequences';
+  static const String _enrollmentScoresPrefKey =
+      'hey_neurix_enrollment_scores';
+  static const String _personalizedThresholdPrefKey =
+      'hey_neurix_personal_threshold';
+  static const double _sequenceSimilarityThreshold = 0.88;
+  static const double minEnrollmentScore = 0.40; // reject bad enrollment samples
   static const int enrollmentSamples = 5;
-  List<List<double>>? _enrolledEmbeddings;
+
+  // ─── Enrollment State ───
+  List<List<double>>? _enrolledEmbeddings; // 5 x 96 averaged
+  List<List<List<double>>>? _enrolledSequences; // 5 x 16 x 96 sequences
+  double? _personalizedThreshold; // from enrollment scores
 
   // ─── ONNX Model Input/Output Names (inspected from models) ───
   static const String _melInputName = 'input';
@@ -101,8 +137,17 @@ class WakeWordService extends ChangeNotifier {
     _isEnabled = prefs.getBool(_prefKey) ?? true;
     print('[WakeWord] Enabled preference: $_isEnabled');
 
-    await _loadEnrolledEmbeddings();
-    print('[WakeWord] Enrolled: $isEnrolled (${_enrolledEmbeddings?.length ?? 0} profiles)');
+    await _loadEnrollmentData();
+    print(
+        '[WakeWord] Enrolled: $isEnrolled (${_enrolledEmbeddings?.length ?? 0} profiles)');
+    if (_personalizedThreshold != null) {
+      print(
+          '[WakeWord] Personalized threshold: ${_personalizedThreshold!.toStringAsFixed(3)}');
+    }
+    if (_enrolledSequences != null) {
+      print(
+          '[WakeWord] Enrollment sequences loaded: ${_enrolledSequences!.length}');
+    }
 
     try {
       await _loadModels();
@@ -130,7 +175,8 @@ class WakeWordService extends ChangeNotifier {
       melData.buffer.asUint8List(),
       sessionOptions,
     );
-    print('[WakeWord] melspectrogram.onnx loaded (${melData.lengthInBytes} bytes)');
+    print(
+        '[WakeWord] melspectrogram.onnx loaded (${melData.lengthInBytes} bytes)');
 
     // Model 2: Speech Embedding
     print('[WakeWord] Loading embedding_model.onnx...');
@@ -139,7 +185,8 @@ class WakeWordService extends ChangeNotifier {
       embData.buffer.asUint8List(),
       sessionOptions,
     );
-    print('[WakeWord] embedding_model.onnx loaded (${embData.lengthInBytes} bytes)');
+    print(
+        '[WakeWord] embedding_model.onnx loaded (${embData.lengthInBytes} bytes)');
 
     // Model 3: Wake Word Classifier
     print('[WakeWord] Loading wake word classifier...');
@@ -148,7 +195,8 @@ class WakeWordService extends ChangeNotifier {
       wwData.buffer.asUint8List(),
       sessionOptions,
     );
-    print('[WakeWord] Wake word classifier loaded (${wwData.lengthInBytes} bytes)');
+    print(
+        '[WakeWord] Wake word classifier loaded (${wwData.lengthInBytes} bytes)');
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -200,35 +248,62 @@ class WakeWordService extends ChangeNotifier {
   // ENROLLMENT
   // ═══════════════════════════════════════════════════════════════════
 
-  Future<void> _loadEnrolledEmbeddings() async {
+  Future<void> _loadEnrollmentData() async {
     final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString(_enrollmentPrefKey);
-    if (jsonStr == null) {
-      _enrolledEmbeddings = null;
-      return;
+
+    // Load averaged embeddings
+    final embJsonStr = prefs.getString(_enrollmentPrefKey);
+    if (embJsonStr != null) {
+      try {
+        final List<dynamic> decoded = jsonDecode(embJsonStr);
+        _enrolledEmbeddings = decoded
+            .map((e) => (e as List<dynamic>)
+                .map((v) => (v as num).toDouble())
+                .toList())
+            .toList();
+        print(
+            '[WakeWord] Loaded ${_enrolledEmbeddings!.length} enrolled embeddings');
+      } catch (e) {
+        print('[WakeWord] Failed to parse enrollment embeddings: $e');
+        _enrolledEmbeddings = null;
+      }
     }
-    try {
-      final List<dynamic> decoded = jsonDecode(jsonStr);
-      _enrolledEmbeddings = decoded
-          .map((e) =>
-              (e as List<dynamic>).map((v) => (v as num).toDouble()).toList())
-          .toList();
-      print(
-          '[WakeWord] Loaded ${_enrolledEmbeddings!.length} enrolled embeddings');
-    } catch (e) {
-      print('[WakeWord] Failed to parse enrollment data: $e');
-      _enrolledEmbeddings = null;
+
+    // Load embedding sequences (5 x 16 x 96)
+    final seqJsonStr = prefs.getString(_enrollmentSequencesPrefKey);
+    if (seqJsonStr != null) {
+      try {
+        final List<dynamic> decoded = jsonDecode(seqJsonStr);
+        _enrolledSequences = decoded
+            .map((seq) => (seq as List<dynamic>)
+                .map((frame) => (frame as List<dynamic>)
+                    .map((v) => (v as num).toDouble())
+                    .toList())
+                .toList())
+            .toList();
+        print(
+            '[WakeWord] Loaded ${_enrolledSequences!.length} enrollment sequences');
+      } catch (e) {
+        print('[WakeWord] Failed to parse enrollment sequences: $e');
+        _enrolledSequences = null;
+      }
     }
+
+    // Load personalized threshold
+    _personalizedThreshold = prefs.getDouble(_personalizedThresholdPrefKey);
   }
 
-  /// Process raw PCM audio into a single 96-dim profile embedding.
-  /// Called by the setup screen for each enrollment sample.
-  Future<List<double>> extractProfileEmbedding(List<double> pcmSamples) async {
-    if (_melSession == null || _embeddingSession == null) {
+  /// Process raw PCM audio and extract full enrollment data:
+  /// averaged embedding, best 16-frame sequence, and classifier score.
+  Future<EnrollmentSampleResult> extractEnrollmentData(
+      List<double> pcmSamples) async {
+    if (_melSession == null ||
+        _embeddingSession == null ||
+        _wakeWordSession == null) {
       throw StateError('ONNX models not loaded. Call initialize() first.');
     }
 
-    // Process audio through mel spectrogram in 1280-sample frames
+    // Step 1: Audio -> all mel frames
     final List<List<double>> allMelFrames = [];
     int offset = 0;
     while (offset + _frameSamples <= pcmSamples.length) {
@@ -241,7 +316,7 @@ class WakeWordService extends ChangeNotifier {
     print(
         '[WakeWord] Enrollment: ${allMelFrames.length} mel frames from ${pcmSamples.length} samples');
 
-    // Extract embeddings from sliding windows of 76 mel frames
+    // Step 2: Mel -> all embeddings (sliding window)
     final List<List<double>> embeddings = [];
     int melOffset = 0;
     while (melOffset + _melFramesNeeded <= allMelFrames.length) {
@@ -252,14 +327,36 @@ class WakeWordService extends ChangeNotifier {
       melOffset += _melSlide;
     }
 
-    if (embeddings.isEmpty) {
-      throw StateError('No embeddings extracted. Audio may be too short.');
+    if (embeddings.length < _embeddingsNeeded) {
+      throw StateError(
+          'Not enough embeddings (${embeddings.length}). Audio may be too short.');
     }
 
     print(
-        '[WakeWord] Enrollment: ${embeddings.length} embeddings extracted, averaging...');
+        '[WakeWord] Enrollment: ${embeddings.length} embeddings extracted');
 
-    // Average all embeddings into one profile vector
+    // Step 3: Find the best 16-embedding window (highest classifier score)
+    // This locates where "Hey Neurix" actually is in the recording.
+    double bestScore = -1.0;
+    int bestStart = 0;
+    for (int start = 0;
+        start + _embeddingsNeeded <= embeddings.length;
+        start++) {
+      final window = embeddings.sublist(start, start + _embeddingsNeeded);
+      final score = await _classifyEmbeddings(window);
+      if (score > bestScore) {
+        bestScore = score;
+        bestStart = start;
+      }
+    }
+
+    final bestSequence =
+        embeddings.sublist(bestStart, bestStart + _embeddingsNeeded);
+
+    print(
+        '[WakeWord] Enrollment: best window at offset $bestStart, score=${bestScore.toStringAsFixed(4)}');
+
+    // Step 4: Average ALL embeddings for speaker profile vector
     final int dim = embeddings.first.length;
     final List<double> averaged = List.filled(dim, 0.0);
     for (final emb in embeddings) {
@@ -271,27 +368,106 @@ class WakeWordService extends ChangeNotifier {
       averaged[i] /= embeddings.length;
     }
 
-    return averaged;
+    return EnrollmentSampleResult(
+      averagedEmbedding: averaged,
+      embeddingSequence: bestSequence,
+      classifierScore: bestScore,
+    );
   }
 
-  /// Save enrolled profile embeddings to SharedPreferences.
-  Future<void> saveEnrollment(List<List<double>> profileEmbeddings) async {
+  /// Save full enrollment data: averaged embeddings, sequences, scores, raw audio.
+  Future<void> saveEnrollmentFull({
+    required List<List<double>> averagedEmbeddings,
+    required List<List<List<double>>> sequences,
+    required List<double> classifierScores,
+    required List<List<double>> rawAudioSamples,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
-    final jsonStr = jsonEncode(profileEmbeddings);
-    await prefs.setString(_enrollmentPrefKey, jsonStr);
 
-    _enrolledEmbeddings = profileEmbeddings;
-    print('[WakeWord] Saved ${profileEmbeddings.length} enrolled embeddings');
+    // Save averaged embeddings (backward compatible key)
+    await prefs.setString(_enrollmentPrefKey, jsonEncode(averagedEmbeddings));
+
+    // Save embedding sequences (5 x 16 x 96)
+    await prefs.setString(
+        _enrollmentSequencesPrefKey, jsonEncode(sequences));
+
+    // Save classifier scores
+    await prefs.setString(
+        _enrollmentScoresPrefKey, jsonEncode(classifierScores));
+
+    // Compute personalized threshold: 0.10 below worst enrollment score, floor at 0.70
+    final minScore = classifierScores.reduce(min);
+    _personalizedThreshold = max(0.70, minScore - 0.10);
+    await prefs.setDouble(
+        _personalizedThresholdPrefKey, _personalizedThreshold!);
+
+    // Save raw audio files for future retraining
+    await _saveRawAudioFiles(rawAudioSamples);
+
+    // Update state
+    _enrolledEmbeddings = averagedEmbeddings;
+    _enrolledSequences = sequences;
+
+    print(
+        '[WakeWord] Saved ${averagedEmbeddings.length} enrollment samples');
+    print(
+        '[WakeWord] Classifier scores: ${classifierScores.map((s) => s.toStringAsFixed(3)).toList()}');
+    print(
+        '[WakeWord] Personalized threshold: ${_personalizedThreshold!.toStringAsFixed(3)}');
     notifyListeners();
   }
 
-  /// Clear enrollment data (for re-enrollment).
+  /// Clear all enrollment data.
   Future<void> clearEnrollment() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_enrollmentPrefKey);
+    await prefs.remove(_enrollmentSequencesPrefKey);
+    await prefs.remove(_enrollmentScoresPrefKey);
+    await prefs.remove(_personalizedThresholdPrefKey);
+    await _deleteRawAudioFiles();
+
     _enrolledEmbeddings = null;
+    _enrolledSequences = null;
+    _personalizedThreshold = null;
     print('[WakeWord] Enrollment cleared');
     notifyListeners();
+  }
+
+  Future<void> _saveRawAudioFiles(List<List<double>> rawAudioSamples) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final enrollDir = Directory('${dir.path}/enrollment');
+      if (await enrollDir.exists()) {
+        await enrollDir.delete(recursive: true);
+      }
+      await enrollDir.create(recursive: true);
+
+      for (int i = 0; i < rawAudioSamples.length; i++) {
+        final file = File('${enrollDir.path}/sample_$i.pcm');
+        final samples = rawAudioSamples[i];
+        // Save as Int16 PCM (2 bytes per sample instead of 8 for double)
+        final int16Data = Int16List(samples.length);
+        for (int j = 0; j < samples.length; j++) {
+          int16Data[j] =
+              (samples[j] * 32767).round().clamp(-32768, 32767);
+        }
+        await file.writeAsBytes(int16Data.buffer.asUint8List());
+      }
+      print(
+          '[WakeWord] Saved ${rawAudioSamples.length} raw audio files to ${enrollDir.path}');
+    } catch (e) {
+      print('[WakeWord] Warning: could not save raw audio files: $e');
+    }
+  }
+
+  Future<void> _deleteRawAudioFiles() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final enrollDir = Directory('${dir.path}/enrollment');
+      if (await enrollDir.exists()) {
+        await enrollDir.delete(recursive: true);
+      }
+    } catch (_) {}
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -402,11 +578,11 @@ class WakeWordService extends ChangeNotifier {
 
   Future<void> _processFrame(List<double> audioFrame) async {
     try {
-      // ─── Step 1: Audio → Mel Spectrogram ───
+      // ─── Step 1: Audio -> Mel Spectrogram ───
       final melFrames = await _computeMelSpectrogram(audioFrame);
       _melBuffer.addAll(melFrames);
 
-      // ─── Step 2: Mel → Embeddings (when enough mel frames accumulated) ───
+      // ─── Step 2: Mel -> Embeddings (when enough mel frames accumulated) ───
       while (_melBuffer.length >= _melFramesNeeded) {
         final melWindow = _melBuffer.sublist(0, _melFramesNeeded);
         // Slide forward by 8 frames (80ms)
@@ -420,31 +596,59 @@ class WakeWordService extends ChangeNotifier {
           _embeddingBuffer.removeAt(0);
         }
 
-        // ─── Step 3: Embeddings → Classification ───
+        // ─── Step 3: Embeddings -> Classification ───
         if (_embeddingBuffer.length == _embeddingsNeeded) {
           final score = await _classifyWakeWord();
           _predictionCount++;
 
           // Skip warmup predictions (model needs to stabilize)
           if (_predictionCount <= _warmupPredictions) {
-            print('[WakeWord] Warmup #$_predictionCount score=${score.toStringAsFixed(4)} (skipped)');
+            print(
+                '[WakeWord] Warmup #$_predictionCount score=${score.toStringAsFixed(4)} (skipped)');
             continue;
           }
 
           // Log periodically for monitoring
           if (_predictionCount % 50 == 0) {
-            print('[WakeWord] Prediction #$_predictionCount score=${score.toStringAsFixed(4)}');
+            print(
+                '[WakeWord] Prediction #$_predictionCount score=${score.toStringAsFixed(4)}');
           }
 
+          // Use personalized threshold if enrolled, otherwise default
+          final effectiveThreshold =
+              _personalizedThreshold ?? _threshold;
+
           // Detection with cooldown to prevent rapid re-triggers
-          if (score > _threshold) {
+          if (score > effectiveThreshold) {
             final now = DateTime.now();
             if (_lastDetection == null ||
                 now.difference(_lastDetection!).inMilliseconds >
                     _detectionCooldownMs) {
-              // ─── Cosine Similarity Verification ───
-              if (_enrolledEmbeddings != null &&
+              // ─── Sequence Similarity Verification ───
+              // Compares the temporal pattern of current audio against
+              // enrolled "Hey Neurix" sequences. This blocks false triggers
+              // from non-wake-word speech by the same speaker.
+              if (_enrolledSequences != null &&
+                  _enrolledSequences!.isNotEmpty) {
+                double bestSeqSim = -1.0;
+                for (final enrolled in _enrolledSequences!) {
+                  final sim = _sequenceSimilarity(
+                      List<List<double>>.from(_embeddingBuffer),
+                      enrolled);
+                  if (sim > bestSeqSim) bestSeqSim = sim;
+                }
+
+                print(
+                    '[WakeWord] Sequence sim: best=${bestSeqSim.toStringAsFixed(4)} threshold=$_sequenceSimilarityThreshold');
+
+                if (bestSeqSim < _sequenceSimilarityThreshold) {
+                  print(
+                      '[WakeWord] Detection SUPPRESSED (sequence mismatch: ${bestSeqSim.toStringAsFixed(4)})');
+                  continue;
+                }
+              } else if (_enrolledEmbeddings != null &&
                   _enrolledEmbeddings!.isNotEmpty) {
+                // Fallback: averaged cosine similarity (legacy enrollment)
                 final int dim = _embeddingBuffer.first.length;
                 final List<double> currentAvg = List.filled(dim, 0.0);
                 for (final emb in _embeddingBuffer) {
@@ -456,18 +660,17 @@ class WakeWordService extends ChangeNotifier {
                   currentAvg[i] /= _embeddingBuffer.length;
                 }
 
-                double bestSimilarity = -1.0;
+                double bestSim = -1.0;
                 for (final enrolled in _enrolledEmbeddings!) {
                   final sim = _cosineSimilarity(currentAvg, enrolled);
-                  if (sim > bestSimilarity) bestSimilarity = sim;
+                  if (sim > bestSim) bestSim = sim;
                 }
 
                 print(
-                    '[WakeWord] Similarity: best=${bestSimilarity.toStringAsFixed(4)} threshold=$_similarityThreshold');
-
-                if (bestSimilarity < _similarityThreshold) {
+                    '[WakeWord] Averaged similarity: ${bestSim.toStringAsFixed(4)}');
+                if (bestSim < 0.65) {
                   print(
-                      '[WakeWord] Detection suppressed (similarity too low: ${bestSimilarity.toStringAsFixed(4)})');
+                      '[WakeWord] Detection SUPPRESSED (speaker mismatch)');
                   continue;
                 }
               }
@@ -493,7 +696,8 @@ class WakeWordService extends ChangeNotifier {
   // ONNX INFERENCE — Stage 1: Mel Spectrogram
   // ═══════════════════════════════════════════════════════════════════
 
-  Future<List<List<double>>> _computeMelSpectrogram(List<double> audioFrame) async {
+  Future<List<List<double>>> _computeMelSpectrogram(
+      List<double> audioFrame) async {
     // Input: [1, 1280] float32 raw audio samples
     final inputData = Float32List.fromList(audioFrame);
     final inputTensor = OrtValueTensor.createTensorWithDataList(
@@ -513,7 +717,7 @@ class WakeWordService extends ChangeNotifier {
 
     final melFrames = <List<double>>[];
 
-    // Parse 4D output: [time][1][dim][32] → list of 32-element mel frames
+    // Parse 4D output: [time][1][dim][32] -> list of 32-element mel frames
     if (rawOutput is List) {
       for (final timeStep in rawOutput) {
         if (timeStep is List) {
@@ -592,11 +796,11 @@ class WakeWordService extends ChangeNotifier {
   // ONNX INFERENCE — Stage 3: Wake Word Classification
   // ═══════════════════════════════════════════════════════════════════
 
-  Future<double> _classifyWakeWord() async {
-    // Input: [1, 16, 96] float32
-    final flatData = Float32List(16 * 96);
+  /// Classify an arbitrary list of embeddings (used by enrollment).
+  Future<double> _classifyEmbeddings(List<List<double>> embeddings) async {
+    final flatData = Float32List(_embeddingsNeeded * 96);
     int idx = 0;
-    for (final emb in _embeddingBuffer) {
+    for (final emb in embeddings) {
       for (final val in emb) {
         flatData[idx++] = val;
       }
@@ -613,7 +817,6 @@ class WakeWordService extends ChangeNotifier {
       {_wwInputName: inputTensor},
     );
 
-    // Output shape: [1, 1] — single detection score
     final outputTensor = outputs![0]!;
     final rawOutput = outputTensor.value;
 
@@ -635,6 +838,11 @@ class WakeWordService extends ChangeNotifier {
     }
 
     return score;
+  }
+
+  /// Classify the current embedding buffer (used during live detection).
+  Future<double> _classifyWakeWord() async {
+    return _classifyEmbeddings(_embeddingBuffer);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -663,6 +871,36 @@ class WakeWordService extends ChangeNotifier {
     magB = sqrt(magB);
     if (magA == 0 || magB == 0) return 0.0;
     return dot / (magA * magB);
+  }
+
+  /// Sequence similarity: frame-by-frame cosine similarity with sliding alignment.
+  /// Compares temporal embedding patterns to verify the same phrase was spoken.
+  /// Returns the best similarity across alignment shifts [-3, +3].
+  static double _sequenceSimilarity(
+      List<List<double>> current, List<List<double>> enrolled) {
+    final int len = min(current.length, enrolled.length);
+    if (len == 0) return 0.0;
+
+    double bestScore = -1.0;
+
+    // Try different alignment shifts to handle timing variation
+    for (int shift = -3; shift <= 3; shift++) {
+      double sum = 0.0;
+      int count = 0;
+      for (int i = 0; i < len; i++) {
+        final j = i + shift;
+        if (j >= 0 && j < enrolled.length && i < current.length) {
+          sum += _cosineSimilarity(current[i], enrolled[j]);
+          count++;
+        }
+      }
+      if (count > 0) {
+        final score = sum / count;
+        if (score > bestScore) bestScore = score;
+      }
+    }
+
+    return bestScore;
   }
 
   // ═══════════════════════════════════════════════════════════════════

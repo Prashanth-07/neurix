@@ -1,0 +1,100 @@
+SUBSCRIPTION SYSTEM
+=====================
+
+1. WHAT IT DOES
+   Neurix has a freemium model. Free users can store up to 2 memories and
+   2 reminders. Pro users (monthly or yearly subscription) get unlimited
+   access. The subscription is managed through Google Play / App Store
+   in-app purchases.
+
+2. BIG PICTURE
+
+   Free tier:
+     - 2 memories max
+     - 2 reminders max
+     - All other features work normally
+
+   Pro tier:
+     - Unlimited memories
+     - Unlimited reminders
+     - Same features, no limits
+
+   Purchase flow:
+     User taps "Upgrade to Pro" → in-app purchase dialog
+       → Google Play / App Store handles payment
+       → Receipt verified → status updated to Pro
+       → Limits removed immediately
+
+3. SUBSCRIPTION PRODUCTS
+
+   Monthly: "neurix_pro_monthly"
+   Yearly:  "neurix_pro_yearly"
+
+   These product IDs match the products configured in Google Play Console
+   and App Store Connect.
+
+4. SUBSCRIPTION STATUS
+
+   Three states:
+     free    → default, limited features
+     pro     → paid subscriber, unlimited
+     loading → checking purchase status
+
+   Status is stored in SharedPreferences for fast access on app start.
+   Also synced to Firebase Firestore for cross-device persistence.
+
+5. LIMIT CHECKING
+
+   Before saving a memory:
+     SubscriptionService.canAddMemory(currentCount) → true/false
+     Free: currentCount < 2 → allowed
+     Pro: always allowed
+
+   Before creating a reminder:
+     SubscriptionService.canAddReminder(currentCount) → true/false
+     Free: currentCount < 2 → allowed
+     Pro: always allowed
+
+   If limit reached → user shown upgrade prompt instead of saving.
+
+6. PURCHASE FLOW
+
+   1. Initialize: Check in-app purchase availability on startup
+   2. Load products: Fetch product details (price, description) from store
+   3. Purchase: User initiates purchase → store handles payment
+   4. Verify: Receipt/purchase token validated
+   5. Update: Status changed to pro → saved locally + cloud
+   6. Restore: If user reinstalls, restorePurchases() checks store
+
+7. RESTORE PURCHASES
+
+   If user reinstalls or switches devices:
+     - restorePurchases() queries the store for existing purchases
+     - If valid subscription found → status updated to pro
+     - Works across devices for the same store account
+
+8. EXAMPLE SCENARIOS
+
+   Scenario A: "Free user hits limit"
+     User has 2 memories saved → says "Remember my locker code is 1234"
+     → canAddMemory(2) returns false
+     → App shows: "You've reached the free limit. Upgrade to Pro?"
+     → Memory NOT saved
+
+   Scenario B: "User upgrades"
+     User taps "Upgrade to Pro" → selects monthly plan
+     → Google Play purchase dialog → payment succeeds
+     → Status: free → pro
+     → User: "Remember my locker code is 1234"
+     → canAddMemory(2) returns true → memory saved
+
+   Scenario C: "Restore on new phone"
+     User installs Neurix on new phone → logs in
+     → restorePurchases() checks Google Play
+     → Finds active monthly subscription
+     → Status set to pro → all limits removed
+
+FILES
+-----
+  lib/services/subscription_service.dart  → SubscriptionService
+  lib/screens/subscription_screen.dart    → Upgrade UI

@@ -1,0 +1,184 @@
+VOICE INTERACTION SYSTEM
+========================
+
+1. WHAT IT DOES
+   Neurix listens to what the user says, converts speech to text, processes it,
+   and speaks back the response. It is a full voice-in, voice-out assistant —
+   no typing needed.
+
+2. BIG PICTURE
+
+   User speaks → speech_to_text → text → intent detection → action → TTS response
+
+   Two packages handle the voice I/O:
+     - speech_to_text: Listens through the mic → converts speech to text
+     - flutter_tts: Converts text to spoken audio → plays through speaker
+
+3. VOICE STATE MACHINE
+
+   The VoiceService tracks four states:
+
+     stopped ──► listening ──► processing ──► speaking ──► stopped
+        │                          │                          │
+        └──────────────────────────┴──────────────────────────┘
+                            (on error)
+
+   stopped     → idle, not doing anything
+   listening   → microphone is active, capturing speech
+   processing  → text captured, figuring out what to do with it
+   speaking    → reading the response out loud via TTS
+
+   Only one state is active at a time. The UI updates reactively based on state.
+
+4. SPEECH-TO-TEXT (Listening)
+
+   Package: speech_to_text
+   Config:
+     - Locale: en_US
+     - Max listen duration: 30 seconds
+     - Pause timeout: 3 seconds (stops if user pauses for 3s)
+     - Partial results: enabled (shows live transcription)
+     - Cancel on error: disabled (keeps listening even after minor errors)
+
+   Flow:
+     1. Request microphone permission via permission_handler
+     2. Initialize speech_to_text engine
+     3. Call listen() with config
+     4. As user speaks, onResult callback fires with partial + final text
+     5. When user pauses for 3s OR 30s limit hits → listening stops
+     6. Final transcribed text is passed to _processVoiceInput()
+
+   The confidence score (0.0 to 1.0) comes with each result.
+   Higher confidence = more accurate transcription.
+
+5. TEXT-TO-SPEECH (Speaking)
+
+   Package: flutter_tts
+   Config:
+     - Language: en-US
+     - Pitch: 1.0 (natural)
+     - Speech rate: 0.5 (slower than normal for clarity)
+
+   When Neurix needs to respond:
+     1. If already speaking → stop current speech first
+     2. Set state to speaking
+     3. Call speak(text)
+     4. On completion → state returns to stopped
+
+6. VOICE COMMAND FLOW (Home Screen)
+
+   This is the full journey from "Hey Neurix" to action:
+
+   Step 1: Activation
+     - Wake word "Hey Neurix" detected (see wake word docs)
+     - OR user taps mic button
+     - OR user presses mic in notification bar
+
+   Step 2: Listening
+     - VoiceService.startListening() called
+     - Live transcription shown on screen
+     - Status text: "Listening..."
+
+   Step 3: Processing
+     - Speech stops (3s pause or 30s timeout)
+     - Duplicate check: skip if same text was already processed
+     - _hasProcessedCurrentInput flag prevents double-processing
+
+   Step 4: Intent Detection
+     - Transcribed text → IntentClassifierService (on-device MobileBERT)
+     - Returns one of: save, search, reminder, cancel_reminder, unclear
+
+   Step 5: Action Routing
+     - save → show confirmation dialog → save memory with embedding
+     - search → search memories semantically → speak results
+     - reminder → show confirmation dialog → create reminder
+     - cancel_reminder → find and delete matching reminder
+     - unclear → speak "Could you say that again?" → restart listening
+
+   Step 6: Response
+     - Action result → TTS speaks the response
+     - UI updates with status message
+
+7. CONFIRMATION DIALOGS
+
+   For save and reminder intents, Neurix shows a confirmation dialog before
+   acting. This prevents accidental saves from misheard speech.
+
+   The dialog shows:
+     - What Neurix heard (transcribed text)
+     - What it plans to do (save memory / create reminder)
+     - Confirm or Cancel buttons
+
+   If confirmed → execute action
+   If cancelled → discard and return to idle
+
+8. NOTIFICATION-TRIGGERED LISTENING
+
+   Neurix has a persistent notification with a mic button. When pressed:
+     - _listeningFromNotification flag is set
+     - App comes to foreground
+     - Listening starts automatically
+     - Works even when app is in background
+
+   Flow:
+     Notification mic press → _handleNotificationMicPress() →
+     _startListeningFromNotification() → same voice flow as above
+
+9. APP LIFECYCLE MANAGEMENT
+
+   When app goes to background:
+     - Wake word service keeps listening (if enabled)
+     - Voice service stops active listening
+     - Persistent notification stays visible
+
+   When app comes to foreground:
+     - Check for pending notification mic press
+     - Resume wake word listening if it was active
+     - Check for active alarms that need display
+
+10. EDGE CASES
+
+    - Microphone permission denied → error message, no listening
+    - Speech recognition unavailable → error message on init
+    - No speech detected → "No speech detected" message
+    - TTS fails → error logged, state resets to stopped
+    - Double tap mic while listening → ignored (state check)
+    - Speaking interrupted → previous speech stops, new one starts
+
+11. EXAMPLE SCENARIOS
+
+    Scenario A: "Save a memory"
+      User: "Hey Neurix" → wake word fires → listening starts
+      User: "I parked my car on level 3"
+      → 3 second pause → listening stops
+      → Intent: "save"
+      → Confirmation dialog: "Save: I parked my car on level 3?"
+      → User taps Confirm
+      → Memory saved with embedding
+      → TTS: "Got it, I'll remember that"
+
+    Scenario B: "Search for something"
+      User taps mic button → listening starts
+      User: "Where did I park my car?"
+      → Intent: "search"
+      → Semantic search finds "I parked my car on level 3"
+      → LLM generates response: "You parked on level 3"
+      → TTS speaks response
+
+    Scenario C: "Unclear input"
+      User: "Hello"
+      → Intent: "unclear"
+      → TTS: "I didn't quite get that. Could you try again?"
+      → Listening restarts automatically
+
+    Scenario D: "From notification"
+      User is in another app → presses mic in notification bar
+      → Neurix comes to foreground
+      → Listening starts immediately
+      → Same flow as above
+
+FILES
+-----
+  lib/services/voice_service.dart     → VoiceService class (STT + TTS)
+  lib/screens/home_screen.dart        → _processVoiceInput(), confirmation dialogs
+  lib/services/wake_word_service.dart → triggers listening start

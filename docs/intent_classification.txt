@@ -1,0 +1,194 @@
+INTENT CLASSIFICATION SYSTEM
+==============================
+
+1. WHAT IT DOES
+   When the user speaks to Neurix, the system needs to figure out what the
+   user wants — save something, search for something, set a reminder, or
+   cancel a reminder. This is called "intent classification." It runs
+   entirely on-device using a MobileBERT ONNX model.
+
+2. BIG PICTURE
+
+   User says: "Remind me to call mom in 5 minutes"
+       → text fed to MobileBERT ONNX model
+       → model outputs probabilities for 6 intents
+       → highest probability wins (if above 0.70 threshold)
+       → result: "reminder" (confidence: 0.95)
+
+3. THE 6 INTENTS
+
+   save             → User wants to store information
+                       "I parked on level 3"
+                       "My password is hello123"
+
+   search           → User wants to find/retrieve information
+                       "Where did I park?"
+                       "What's my password?"
+
+   reminder         → User wants to set a reminder
+                       "Remind me to call mom in 5 minutes"
+                       "Set a reminder to drink water every hour"
+
+   cancel_all       → User wants to cancel ALL reminders
+                       "Cancel all my reminders"
+                       "Delete all reminders"
+
+   cancel_specific  → User wants to cancel ONE specific reminder
+                       "Cancel the water reminder"
+                       "Stop reminding me about medicine"
+
+   unclear          → Input is ambiguous or doesn't fit
+                       "Hello"
+                       "What's up"
+
+   Note: cancel_all and cancel_specific are merged into "cancel_reminder"
+   for backward compatibility with the rest of the app.
+
+4. ON-DEVICE MODEL (MobileBERT)
+
+   Model: MobileBERT fine-tuned for intent classification
+   Format: ONNX (Open Neural Network Exchange)
+   File: assets/models/intent_model.onnx
+   Vocab: assets/models/vocab.txt (WordPiece tokenizer vocabulary)
+
+   Why on-device?
+     - No internet needed for intent detection
+     - Instant response (no API latency)
+     - Works offline
+     - Privacy: user input never leaves the device for intent detection
+
+5. TOKENIZATION (WordPiece)
+
+   Before text goes to the model, it must be tokenized:
+
+   Step 1: Lowercase and clean
+     "Where Did I Park?" → "where did i park?"
+
+   Step 2: Split by whitespace and punctuation
+     "where did i park?" → ["where", "did", "i", "park", "?"]
+
+   Step 3: WordPiece subword tokenization
+     Each word is broken into subwords found in the vocabulary.
+     If a word isn't in the vocab, it's split into smaller pieces.
+     Subword pieces after the first are prefixed with "##".
+
+     Example: "parking" → "park" + "##ing"
+     Unknown chars → [UNK] token (ID 100)
+
+   Step 4: Add special tokens
+     [CLS] + tokens + [SEP] + [PAD]...
+
+     [CLS] (101) = start of sequence
+     [SEP] (102) = end of sequence
+     [PAD] (0)   = padding to fill up to max length
+
+   Step 5: Pad to 64 tokens
+     Max sequence length: 64 tokens
+     Shorter inputs are padded with [PAD]
+     Longer inputs are truncated to 62 tokens (+ CLS + SEP)
+
+   Step 6: Create attention mask
+     1 for real tokens, 0 for padding tokens
+     This tells the model which tokens to pay attention to.
+
+6. INFERENCE
+
+   Input tensors (shape [1, 64]):
+     - input_ids: the token IDs
+     - attention_mask: 1s and 0s
+
+   Output: 6 probability scores (one per intent)
+
+   The model uses softmax-like output — probabilities sum roughly to 1.0.
+
+   Example output:
+     save: 0.02, search: 0.01, reminder: 0.95,
+     cancel_all: 0.01, cancel_specific: 0.00, unclear: 0.01
+     → Winner: "reminder" with 0.95 confidence
+
+7. CONFIDENCE THRESHOLD
+
+   Threshold: 0.70
+
+   If the highest probability is below 0.70, the intent falls back to
+   "unclear" regardless of which intent scored highest.
+
+   This prevents acting on low-confidence predictions.
+
+   Examples:
+     - reminder: 0.95 → confident → use "reminder"
+     - save: 0.45, search: 0.40 → low confidence → fallback to "unclear"
+
+8. CANCEL TYPE EXTRACTION
+
+   When the intent is cancel_specific, the system extracts WHAT to cancel:
+
+   "Cancel the water reminder"
+     → intent: cancel_specific
+     → topic extraction: strips "cancel", "reminder", "the", "my" etc.
+     → result: "water"
+
+   Then the app searches active reminders for one matching "water".
+
+   Common patterns stripped:
+     "cancel the reminder", "delete my reminder", "stop reminding me about",
+     "turn off the", etc.
+
+   If no topic can be extracted, the original input is returned as-is.
+
+9. FALLBACK: KEYWORD-BASED DETECTION
+
+   If the ONNX model fails to load or throws an error, a rule-based
+   fallback kicks in:
+
+   cancel_reminder:
+     Input contains (cancel|stop|delete|remove) AND "reminder"
+
+   reminder:
+     Input contains "remind me" or "set a reminder" or
+     "remind" + (every|in|at|after)
+
+   search:
+     Input starts with (where|what|when|how|find|search|look for)
+     OR ends with "?"
+
+   save:
+     Input contains (i put|i left|i kept|i placed|i stored|i parked|
+     remember that|my password|my pin|meeting at)
+     OR input has 3+ words (assume it's something to save)
+
+   unclear:
+     Nothing matched above
+
+10. EXAMPLE SCENARIOS
+
+    Scenario A: "Clear intent"
+      Input: "Remind me to take medicine at 4pm"
+      → Tokenize → [CLS] remind me to take medicine at 4 ##pm [SEP] [PAD]...
+      → Model output: reminder=0.97
+      → 0.97 > 0.70 threshold → intent: "reminder"
+
+    Scenario B: "Ambiguous input"
+      Input: "Hmm okay"
+      → Model output: unclear=0.55, save=0.20, search=0.15
+      → 0.55 < 0.70 threshold → fallback to "unclear"
+      → Neurix asks user to repeat
+
+    Scenario C: "Cancel specific"
+      Input: "Stop the water reminder"
+      → Model output: cancel_specific=0.92
+      → Intent: cancel_specific → mapped to "cancel_reminder"
+      → Topic extraction: "water"
+      → App searches for reminder with "water" in message
+
+    Scenario D: "Model fails"
+      ONNX model crashes → catch error
+      → Fallback: keyword detection
+      → "Where did I park?" → starts with "where" → intent: "search"
+
+FILES
+-----
+  lib/services/intent_classifier_service.dart  → IntentClassifierService (ONNX model)
+  lib/services/llm_service.dart                → detectIntent(), fallback patterns
+  assets/models/intent_model.onnx              → MobileBERT ONNX model
+  assets/models/vocab.txt                      → WordPiece vocabulary (30,522 tokens)

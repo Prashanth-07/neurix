@@ -10,8 +10,8 @@ import '../widgets/starfield_background.dart';
 
 /// Voice enrollment screen for "Hey Neurix" wake word setup.
 /// Records 5 samples of the user saying "Hey Neurix",
-/// extracts 96-dim speech embeddings via the ONNX pipeline,
-/// and stores them for cosine-similarity speaker verification.
+/// extracts 96-dim speech embeddings + 16-frame sequences via the ONNX pipeline,
+/// and stores them for sequence-similarity verification.
 class WakeWordSetupScreen extends StatefulWidget {
   const WakeWordSetupScreen({Key? key}) : super(key: key);
 
@@ -22,7 +22,7 @@ class WakeWordSetupScreen extends StatefulWidget {
 class _WakeWordSetupScreenState extends State<WakeWordSetupScreen>
     with TickerProviderStateMixin {
   static const int _totalSamples = WakeWordService.enrollmentSamples;
-  static const int _recordDurationMs = 3000;
+  static const int _recordDurationMs = 3500;
 
   final WakeWordService _wakeWordService = WakeWordService();
   AudioRecorder? _recorder;
@@ -30,7 +30,12 @@ class _WakeWordSetupScreenState extends State<WakeWordSetupScreen>
   bool _isRecording = false;
   bool _hasStarted = false;
 
+  // Collected enrollment data per sample
   final List<List<double>> _collectedEmbeddings = [];
+  final List<List<List<double>>> _collectedSequences = [];
+  final List<double> _collectedScores = [];
+  final List<List<double>> _collectedRawAudio = [];
+
   int get _currentStep => _collectedEmbeddings.length;
   String _statusMessage = '';
   bool _isSaving = false;
@@ -124,7 +129,7 @@ class _WakeWordSetupScreenState extends State<WakeWordSetupScreen>
       }
     });
 
-    // Wait for recording duration (no countdown shown)
+    // Wait for recording duration
     await Future.delayed(const Duration(milliseconds: _recordDurationMs));
 
     // Stop recording
@@ -145,11 +150,30 @@ class _WakeWordSetupScreenState extends State<WakeWordSetupScreen>
     print(
         '[WakeWordSetup] Recorded ${pcmSamples.length} samples for step ${_currentStep + 1}');
 
-    // Process through ONNX pipeline
+    // Process through ONNX pipeline — extract full enrollment data
     try {
-      final profileEmbedding =
-          await _wakeWordService.extractProfileEmbedding(pcmSamples);
-      _onSampleCaptured(profileEmbedding);
+      final result =
+          await _wakeWordService.extractEnrollmentData(pcmSamples);
+
+      // Reject samples where classifier didn't recognize "Hey Neurix"
+      if (result.classifierScore < WakeWordService.minEnrollmentScore) {
+        print(
+            '[WakeWordSetup] Sample REJECTED: score=${result.classifierScore.toStringAsFixed(4)} < ${WakeWordService.minEnrollmentScore}');
+        if (mounted) {
+          setState(() => _statusMessage = 'Didn\'t catch that. Try again...');
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (mounted &&
+                !_isRecording &&
+                !_isSaving &&
+                _currentStep < _totalSamples) {
+              _startRecording();
+            }
+          });
+        }
+        return;
+      }
+
+      _onSampleCaptured(result, pcmSamples);
     } catch (e) {
       print('[WakeWordSetup] Embedding error: $e');
       if (mounted) {
@@ -166,12 +190,19 @@ class _WakeWordSetupScreenState extends State<WakeWordSetupScreen>
     }
   }
 
-  void _onSampleCaptured(List<double> embedding) {
+  void _onSampleCaptured(
+      EnrollmentSampleResult result, List<double> rawAudio) {
     print(
-        '[WakeWordSetup] Sample ${_currentStep + 1}: ${embedding.length}-dim embedding');
+        '[WakeWordSetup] Sample ${_currentStep + 1}: '
+        '${result.averagedEmbedding.length}-dim embedding, '
+        'score=${result.classifierScore.toStringAsFixed(4)}, '
+        'sequence=${result.embeddingSequence.length}x${result.embeddingSequence.first.length}');
 
     setState(() {
-      _collectedEmbeddings.add(embedding);
+      _collectedEmbeddings.add(result.averagedEmbedding);
+      _collectedSequences.add(result.embeddingSequence);
+      _collectedScores.add(result.classifierScore);
+      _collectedRawAudio.add(rawAudio);
       _statusMessage = 'Got it!';
     });
 
@@ -204,7 +235,13 @@ class _WakeWordSetupScreenState extends State<WakeWordSetupScreen>
     _progressController.animateTo(1.0,
         duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
 
-    await _wakeWordService.saveEnrollment(_collectedEmbeddings);
+    // Save full enrollment data: embeddings, sequences, scores, raw audio
+    await _wakeWordService.saveEnrollmentFull(
+      averagedEmbeddings: _collectedEmbeddings,
+      sequences: _collectedSequences,
+      classifierScores: _collectedScores,
+      rawAudioSamples: _collectedRawAudio,
+    );
 
     setState(() {
       _isSaving = false;

@@ -367,13 +367,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         print('[FLOW] -> DELETE REMINDER');
         response = await _handleCancelReminder(_transcribedText);
       } else {
-        // Unclear: Ask for clarification and keep listening
-        print('[FLOW] -> UNCLEAR, restarting listening');
-        response = "I didn't understand. Can you please be more clear?";
+        // Unclear: Inform user and go back to wake word detection
+        print('[FLOW] -> UNCLEAR, returning to wake word mode');
+        response = "Sorry, that's not something I can help with. I can save memories, search them, or set reminders.";
         setState(() { _statusText = response; _isProcessing = false; });
         await _speak(response);
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted) _startListening();
+        setState(() { _statusText = 'Tap to speak'; _transcribedText = ''; });
+        _wakeWordService.resume();
         return;
       }
 
