@@ -116,12 +116,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() {
           _isListening = false;
           _statusText = 'Tap to speak';
+          _transcribedText = '';
           _listeningFromNotification = false;
         });
-        // Only speak error if not triggered from notification (to avoid TTS being captured)
         if (!wasFromNotification) {
           _speak('Sorry, I couldn\'t hear you. Please try again.');
         }
+        _wakeWordService.resume();
       },
     );
     print('[HomeScreen] Speech initialized: $_speechInitialized');
@@ -998,6 +999,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _buildSubscriptionCard(),
                 const SizedBox(height: AppSizes.paddingMedium),
 
+                // How Neurix Works Card
+                _buildHowItWorksCard(),
+                const SizedBox(height: AppSizes.paddingMedium),
+
                 // All Memories Card
                 FutureBuilder<List<Memory>>(
                   future: LocalDbService().getMemoriesByUserId(userId),
@@ -1232,6 +1237,261 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Icons.check_circle,
               color: AppColors.success,
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHowItWorksCard() {
+    return GlassCard(
+      onTap: _showHowItWorksSheet,
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: AppColors.primary,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: AppSizes.paddingMedium),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('How Neurix Works', style: AppTextStyles.subheading),
+                Text(
+                  'See what you can do with Neurix',
+                  style: AppTextStyles.caption,
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: AppColors.textHint),
+        ],
+      ),
+    );
+  }
+
+  void _showHowItWorksSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          builder: (context, scrollController) {
+            return ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface.withOpacity(0.92),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  child: Column(
+                    children: [
+                      // Handle bar
+                      const SizedBox(height: 12),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // Title
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingLarge),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary, size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text('How Neurix Works', style: AppTextStyles.subheading),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingLarge),
+                        child: Text(
+                          'Speak naturally or tap the mic. Here\'s everything Neurix can do for you.',
+                          style: AppTextStyles.caption,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Divider(color: Colors.white.withOpacity(0.08), height: 1),
+                      // Scrollable content
+                      Expanded(
+                        child: ListView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(AppSizes.paddingLarge),
+                          children: [
+                            _buildFeatureSection(
+                              icon: Icons.record_voice_over_rounded,
+                              iconColor: AppColors.primary,
+                              title: 'Hey Neurix — Hands-free',
+                              description: 'Say "Hey Neurix" from anywhere to activate Neurix without touching your phone. You must enroll your voice first — tap the "Hey Neurix" card on the home screen and follow the steps.',
+                              examples: [
+                                'Hey Neurix → I parked on level 3',
+                                'Hey Neurix → Where did I park?',
+                                'Hey Neurix → Remind me to call mom in 5 minutes',
+                                'Hey Neurix → Cancel all reminders',
+                              ],
+                            ),
+                            _buildFeatureSection(
+                              icon: Icons.lightbulb_outline_rounded,
+                              iconColor: AppColors.warning,
+                              title: 'Save a Memory',
+                              description: 'Tell Neurix anything you want to remember — items, locations, notes, passwords, anything.',
+                              examples: [
+                                'Hey Neurix → I parked my car on level 3, slot B12',
+                                'Hey Neurix → My passport is in the top drawer',
+                                'Hey Neurix → The wifi password is sunshine2024',
+                                'Hey Neurix → Meeting with client is on Friday at 3pm',
+                              ],
+                            ),
+                            _buildFeatureSection(
+                              icon: Icons.search_rounded,
+                              iconColor: AppColors.info,
+                              title: 'Search your Memories',
+                              description: 'Ask Neurix anything and it will find and read back the most relevant thing you\'ve saved.',
+                              examples: [
+                                'Hey Neurix → Where did I park?',
+                                'Hey Neurix → Where is my passport?',
+                                'Hey Neurix → What\'s the wifi password?',
+                                'Hey Neurix → When is my meeting?',
+                              ],
+                            ),
+                            _buildFeatureSection(
+                              icon: Icons.alarm_rounded,
+                              iconColor: AppColors.success,
+                              title: 'Set a One-time Reminder',
+                              description: 'Ask Neurix to remind you about something at a specific time or after a delay.',
+                              examples: [
+                                'Hey Neurix → Remind me to call mom in 5 minutes',
+                                'Hey Neurix → Remind me to take medicine at 4pm',
+                                'Hey Neurix → Remind me to check the oven after 30 minutes',
+                              ],
+                            ),
+                            _buildFeatureSection(
+                              icon: Icons.repeat_rounded,
+                              iconColor: AppColors.primaryLight,
+                              title: 'Set a Recurring Reminder',
+                              description: 'Neurix can remind you repeatedly at a fixed interval — great for habits and routines.',
+                              examples: [
+                                'Hey Neurix → Remind me to drink water every 30 minutes',
+                                'Hey Neurix → Remind me to stretch every 1 hour',
+                                'Hey Neurix → Remind me to check my posture every 20 minutes',
+                              ],
+                            ),
+                            _buildFeatureSection(
+                              icon: Icons.cancel_outlined,
+                              iconColor: AppColors.error,
+                              title: 'Cancel a Specific Reminder',
+                              description: 'Tell Neurix which reminder to stop and it will cancel just that one.',
+                              examples: [
+                                'Hey Neurix → Cancel the water reminder',
+                                'Hey Neurix → Stop reminding me about medicine',
+                                'Hey Neurix → Delete the posture reminder',
+                              ],
+                            ),
+                            _buildFeatureSection(
+                              icon: Icons.delete_sweep_rounded,
+                              iconColor: AppColors.error,
+                              title: 'Cancel All Reminders',
+                              description: 'Clear all your active reminders at once with a single command.',
+                              examples: [
+                                'Hey Neurix → Cancel all reminders',
+                                'Hey Neurix → Delete all my reminders',
+                                'Hey Neurix → Stop all reminders',
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFeatureSection({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String description,
+    required List<String> examples,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Text(title, style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(description, style: AppTextStyles.caption),
+          const SizedBox(height: 10),
+          ...examples.map((example) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('  •  ', style: AppTextStyles.caption.copyWith(color: iconColor)),
+                Expanded(
+                  child: Text(
+                    '"$example"',
+                    style: AppTextStyles.caption.copyWith(
+                      color: Colors.white.withOpacity(0.55),
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )),
+          Divider(color: Colors.white.withOpacity(0.06), height: 1),
         ],
       ),
     );
