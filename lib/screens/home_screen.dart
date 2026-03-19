@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -1292,11 +1291,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           builder: (context, scrollController) {
             return ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Container(
+              child: Container(
                   decoration: BoxDecoration(
-                    color: AppColors.surface.withOpacity(0.92),
+                    color: AppColors.surface.withOpacity(0.97),
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
                     border: Border.all(color: Colors.white.withOpacity(0.1)),
                   ),
@@ -1435,7 +1432,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-              ),
             );
           },
         );

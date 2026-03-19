@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 
@@ -28,24 +27,18 @@ class GlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final radius = borderRadius ?? AppSizes.borderRadius;
 
-    Widget card = ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          padding: padding ?? const EdgeInsets.all(AppSizes.paddingMedium),
-          margin: margin,
-          decoration: BoxDecoration(
-            color: backgroundColor ?? AppColors.glass,
-            borderRadius: BorderRadius.circular(radius),
-            border: Border.all(
-              color: borderColor ?? AppColors.glassBorder,
-              width: 1,
-            ),
-          ),
-          child: child,
+    Widget card = Container(
+      padding: padding ?? const EdgeInsets.all(AppSizes.paddingMedium),
+      margin: margin,
+      decoration: BoxDecoration(
+        color: backgroundColor ?? AppColors.glass,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: borderColor ?? AppColors.glassBorder,
+          width: 1,
         ),
       ),
+      child: child,
     );
 
     if (onTap != null) {
