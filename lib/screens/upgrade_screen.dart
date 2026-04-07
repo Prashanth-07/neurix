@@ -15,6 +15,11 @@ class UpgradeScreen extends StatefulWidget {
 
 class _UpgradeScreenState extends State<UpgradeScreen> {
   bool _isPurchasing = false;
+  bool _showPromoField = false;
+  bool _isApplyingPromo = false;
+  final _promoController = TextEditingController();
+  String? _promoMessage;
+  bool _promoSuccess = false;
 
   @override
   void initState() {
@@ -150,9 +155,24 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
                       },
                       child: const Text(
                         'Restore Purchases',
-                        style: const TextStyle(color: AppColors.textSecondary),
+                        style: TextStyle(color: AppColors.textSecondary),
                       ),
                     ),
+
+                  // Promo code section
+                  if (!subscription.isPro) ...[
+                    const SizedBox(height: 8),
+                    if (!_showPromoField)
+                      TextButton(
+                        onPressed: () => setState(() => _showPromoField = true),
+                        child: const Text(
+                          'Have a promo code?',
+                          style: TextStyle(color: AppColors.primary),
+                        ),
+                      )
+                    else
+                      _buildPromoCodeField(subscription),
+                  ],
 
                   const SizedBox(height: 16),
 
@@ -423,6 +443,85 @@ class _UpgradeScreenState extends State<UpgradeScreen> {
               style: TextStyle(color: AppColors.success),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPromoCodeField(SubscriptionService subscription) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.glass,
+        borderRadius: BorderRadius.circular(AppSizes.borderRadius),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _promoController,
+                  textCapitalization: TextCapitalization.characters,
+                  style: const TextStyle(color: AppColors.text, fontSize: 16),
+                  decoration: InputDecoration(
+                    hintText: 'Enter promo code',
+                    hintStyle: const TextStyle(color: AppColors.textHint),
+                    filled: true,
+                    fillColor: AppColors.background.withOpacity(0.5),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: _isApplyingPromo
+                    ? null
+                    : () async {
+                        setState(() {
+                          _isApplyingPromo = true;
+                          _promoMessage = null;
+                        });
+                        final result = await subscription.applyPromoCode(_promoController.text);
+                        if (mounted) {
+                          setState(() {
+                            _isApplyingPromo = false;
+                            _promoSuccess = result == 'success';
+                            _promoMessage = _promoSuccess ? 'Pro unlocked for 1 year!' : result;
+                          });
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: _isApplyingPromo
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text('Apply', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+          if (_promoMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _promoMessage!,
+              style: TextStyle(
+                color: _promoSuccess ? AppColors.success : AppColors.error,
+                fontSize: 13,
+              ),
+            ),
+          ],
         ],
       ),
     );

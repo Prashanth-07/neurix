@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -244,6 +245,20 @@ class SubscriptionService extends ChangeNotifier {
     final isPro = prefs.getBool('is_pro') ?? false;
 
     if (isPro) {
+      // Check if promo code has expired
+      final promoExpiryMs = prefs.getInt('promo_expiry_ms');
+      if (promoExpiryMs != null) {
+        final expiry = DateTime.fromMillisecondsSinceEpoch(promoExpiryMs);
+        if (DateTime.now().isAfter(expiry)) {
+          print('[SubscriptionService] Promo code expired, reverting to free');
+          await prefs.remove('is_pro');
+          await prefs.remove('promo_code_used');
+          await prefs.remove('promo_expiry_ms');
+          _status = SubscriptionStatus.free;
+          notifyListeners();
+          return;
+        }
+      }
       _status = SubscriptionStatus.pro;
       notifyListeners();
       print('[SubscriptionService] Found cached Pro status');
@@ -259,6 +274,75 @@ class SubscriptionService extends ChangeNotifier {
       } catch (e) {
         print('[SubscriptionService] Restore error: $e');
       }
+    }
+  }
+
+  /// Apply a promo code to unlock Pro for 1 year
+  Future<String> applyPromoCode(String code) async {
+    final trimmedCode = code.trim().toUpperCase();
+    print('[SubscriptionService] Applying promo code: $trimmedCode');
+
+    if (trimmedCode.isEmpty) {
+      return 'Please enter a promo code';
+    }
+
+    try {
+      final firestore = FirebaseFirestore.instance;
+      final docRef = firestore.collection('promo_codes').doc(trimmedCode);
+      final doc = await docRef.get();
+
+      if (!doc.exists) {
+        print('[SubscriptionService] Promo code not found');
+        return 'Invalid promo code';
+      }
+
+      final data = doc.data()!;
+      final maxUses = data['maxUses'] as int? ?? 0;
+      final usedCount = data['usedCount'] as int? ?? 0;
+      final isActive = data['isActive'] as bool? ?? true;
+
+      // Check if code is active
+      if (!isActive) {
+        return 'This promo code is no longer active';
+      }
+
+      // Check if code has uses remaining
+      if (maxUses > 0 && usedCount >= maxUses) {
+        return 'This promo code has been fully redeemed';
+      }
+
+      // Check if code itself has an expiry
+      final codeExpiryMs = data['expiresAtMs'] as int?;
+      if (codeExpiryMs != null) {
+        final codeExpiry = DateTime.fromMillisecondsSinceEpoch(codeExpiryMs);
+        if (DateTime.now().isAfter(codeExpiry)) {
+          return 'This promo code has expired';
+        }
+      }
+
+      // Code is valid — activate Pro for 1 year
+      final expiry = DateTime.now().add(const Duration(days: 365));
+
+      // Update usage count in Firestore
+      await docRef.update({
+        'usedCount': FieldValue.increment(1),
+      });
+
+      // Save locally
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('is_pro', true);
+      await prefs.setString('promo_code_used', trimmedCode);
+      await prefs.setInt('promo_expiry_ms', expiry.millisecondsSinceEpoch);
+
+      _status = SubscriptionStatus.pro;
+      _errorMessage = null;
+      notifyListeners();
+
+      print('[SubscriptionService] Promo code applied! Pro until: $expiry');
+      return 'success';
+    } catch (e) {
+      print('[SubscriptionService] Promo code error: $e');
+      return 'Something went wrong. Please try again.';
     }
   }
 
